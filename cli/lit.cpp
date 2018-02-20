@@ -2,6 +2,8 @@
 #include <wythe/exception.h>
 #include <rpc.h>
 #include <nlohmann/json.hpp>
+#include <iomanip>
+#include <locale>
 
 using json = nlohmann::json;
 
@@ -11,8 +13,18 @@ struct command_flags {
 
 std::string name = "litcli";
 
-json get_btcusd() {
-    return rpc::request_remote("https://api.gemini.com/v1/pubticker/btcusd");
+template <typename T>
+std::string dollars(T value) {
+    std::stringstream ss;
+    ss.imbue(std::locale(""));
+    ss << "$" << std::fixed << std::setprecision(2) << value;
+    return ss.str();
+}
+
+std::string get_btcusd() {
+    auto j = rpc::request_remote("https://api.gemini.com/v1/pubticker/btcusd");
+    auto v = j.at("last").get<std::string>();
+	return dollars(std::stod(v));
 }
 
 json get_funds() {
@@ -37,6 +49,7 @@ int main(int argc, char ** argv) {
     try {
         wythe::command line("lit", "CLI Bitcoin Lightning Wallet", "lit [options]");
         line.add(wythe::option("listfunds", 'f', "Show funds available for opening channels", [&]{ list_funds(); } ));
+        line.add(wythe::option("price", 'p', "Show current BTC price in USD", [&]{ std::cout << get_btcusd() << '\n'; } ));
 
         line.add_note("Use at your own demise.\n");
         line.parse(argc, argv);

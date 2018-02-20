@@ -43,11 +43,15 @@ namespace rpc {
         curl_easy_setopt(c.c, CURLOPT_URL, url.c_str());
         auto r = curl_easy_perform(c.c);
         if (r != CURLE_OK) PANIC("curl fail: " << curl_easy_strerror(r));
-        return json::parse(c.s);
+        auto j = json::parse(c.s);
+        if (j.find("result") != j.end()) {
+            if (j.at("result").get<std::string>() == "error") PANIC(url << " error: " << std::setw(4) << j);
+        }
+        return j;
     }
     
-    struct conn {
-        conn() {
+    struct local_endpoint {
+        local_endpoint() {
             fd = socket(AF_UNIX, SOCK_STREAM, 0);
             if (fd < 0) PANIC("socket() failed");
             strcpy(addr.sun_path, "lightning-rpc");
@@ -56,10 +60,10 @@ namespace rpc {
             if (connect(fd, (struct sockaddr *) & addr, sizeof(addr)) != 0) PANIC("cannot connect to " << addr.sun_path);
         }
 
-        conn(const conn &) = delete;
-        conn & operator=(const conn &) = delete;
+        local_endpoint(const local_endpoint &) = delete;
+        local_endpoint & operator=(const local_endpoint &) = delete;
 
-        ~conn() {
+        ~local_endpoint() {
             if (fd != -1) close(fd);
         }
 
@@ -84,7 +88,7 @@ namespace rpc {
         return true;
     }
 
-    inline json read_all(const conn & c) {
+    inline json read_all(const local_endpoint & c) {
         std::string v;
         v.reserve(360);
         char ch;
@@ -100,7 +104,7 @@ namespace rpc {
     }
 
     json request_local(const json & req) {
-        conn c;
+        local_endpoint c;
         std::string s = req.dump();
         write_all(c.fd, s.data(), s.size());
         return read_all(c);

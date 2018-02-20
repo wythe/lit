@@ -30,3 +30,9 @@
 *.exe
 *.out
 *.app
+
+# Other 
+build
+o
+tags
+*.swp
