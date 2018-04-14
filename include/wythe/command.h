@@ -5,51 +5,56 @@
 #include <functional>
 #include <vector>
 #include <string>
+#include <map>
 #include <iostream>
 
 namespace wythe {
-class Option
-{
+    namespace cli {
+
+    class option {
+        public:
+
+        option(std::string name, char short_opt, std::string desc, 
+            std::function<void()> action = [](){ } ) : 
+            name(name), short_opt(short_opt), desc(desc), 
+            binary_action(action), flag(true), present(false)
+        {
+        }
+
+        option(std::string name, char short_opt, std::string desc, std::string def, 
+            std::function<void(std::string val)> action = [](std::string){ }
+            ):
+            name(name), short_opt(short_opt), desc(desc), default_value(def), action(action), 
+            flag(false), present(false)
+        {
+        }
+
+        std::string name;
+        char short_opt;
+        std::string desc;
+        std::string default_value;
+
+        std::function<void()> binary_action;
+        std::function<void(std::string)> action;
+
+        bool flag;
+        bool present;
+
+    };
+
+    struct command {
+        command() = default;
+        command (const std::string & name, const std::string & desc, std::function<void()>  action) : 
+            name(name), desc(desc), action(action) {}
+        std::string name;
+        std::string desc;
+        std::function<void()> action;
+        std::vector<option> opts;
+    };
+
+    class line {
     public:
-
-    Option(std::string name, char short_opt, std::string desc, 
-        std::function<void()> action = [](){ } ) : 
-        name(name), short_opt(short_opt), desc(desc), 
-        binary_action(action), flag(true), present(false)
-    {
-    }
-
-    Option(std::string name, char short_opt, std::string desc, std::string def, 
-        std::function<void(std::string val)> action = [](std::string){ }
-        ):
-        name(name), short_opt(short_opt), desc(desc), default_value(def), action(action), 
-        flag(false), present(false)
-    {
-    }
-
-    std::string name;
-    char short_opt;
-    std::string desc;
-    std::string default_value;
-
-    std::function<void()> binary_action;
-    std::function<void(std::string)> action;
-
-    bool flag;
-    bool present;
-
-};
-
-void version() 
-{
-}
-
-typedef Option option;
-
-class command {
-    public:
-    enum State
-    {
+    enum State {
         Idle, 
         ShortStart,
         ShortContinue,
@@ -59,69 +64,72 @@ class command {
         LongOptionStart,
         LongOption,
         LookingForEqual,
-        TargetStart,
+        CommandOrTarget,
+        LookingForTarget,
         Target
 
 
     };
 
-    command(std::string cmd, std::string name, std::string usage) :
-    cmd(cmd), name(name), usage(usage) { }
-
-    void add(Option const & opt)
-    {
-        opts.push_back(opt);
-    }
-
-    void add_note(std::string const & note)
-    {
-        notes.push_back(note);
-    }
+    line(const std::string & version, const std::string & name, const std::string & desc, const std::string & usage) :
+        version_no(version), name(name), desc(desc), usage(usage) { }
 
 
-void help() const
-{
-        std::cout << 
-            cmd << " -- " << name << "\n\n" << usage << "\n" <<
-            "Options:\n";
-        for (auto const & opt : opts)
-        {
-            std::cout << "    ";
-            if (opt.short_opt != '~') std::cout << "-" << opt.short_opt << ", ";
-            std::cout << "--" << opt.name;
-            if (opt.flag)
-                std::cout << " : " << opt.desc << "\n";
-            else 
-            {
-                std::cout << "= value : " << opt.desc;
-                if (!opt.default_value.empty()) std::cout <<  " (" << opt.default_value << ")";
-                std::cout << std::endl;
-            }
+template <typename T>
+void disp_opts(T & opts) const {
+    for (auto const & opt : opts) {
+        std::cout << "  ";
+        if (opt.short_opt != '~') std::cout << "-" << opt.short_opt << ", ";
+        std::cout << "--" << opt.name;
+        if (opt.flag)
+            std::cout << " : " << opt.desc << "\n";
+        else {
+            std::cout << "= value : " << opt.desc;
+            if (!opt.default_value.empty()) std::cout <<  " (" << opt.default_value << ")";
+            std::cout << std::endl;
         }
-        if (!notes.empty())
-        {
-            std::cout << "\n";
-            for (auto const & n : notes) std::cout << n << "\n";
-        }
+    }
+}
+
+template <typename T>
+void disp_cmds(T & cmds) const {
+    for (auto const & cmd : cmds) {
+        std::cout << "\n  " << cmd.name << " : " << cmd.desc << '\n';
+        disp_opts(cmd.opts);
+    }
+}
+
+void help() const {
+    std::cout << name << " -- " << desc << "\n\n" << usage << "\n";
+    disp_opts(global_opts);
+    disp_cmds(commands);
+    if (!notes.empty()) {
         std::cout << "\n";
+        for (auto const & n : notes) std::cout << n << "\n";
+    }
+    std::cout << "\n";
 } 
 
-void parse(int argc, char * argv[])
-{
+void version () const {
+    std::cout << name << " version " << version_no << '\n';
+}
+
+void parse(int argc, char * argv[]) {
     State state = Idle;
     std::string cl;
     std::string target;
     std::string long_opt;
     std::string value;
-    std::vector<Option>::iterator it;
+    std::vector<option>::iterator it;
 
+    std::vector<option> & opts = global_opts;
     // first, let's add help and version options.
 
-    it = std::find_if(opts.begin(), opts.end(), [&](Option & o){ return o.short_opt == 'h'; });
-    add(Option("help", (it == opts.end() ? 'h' : '~'), "Show this help usage", [&]{ help(); exit(0); }));
+    it = std::find_if(opts.begin(), opts.end(), [&](option & o){ return o.short_opt == 'h'; });
+    opts.emplace_back("help", (it == opts.end() ? 'h' : '~'), "Show this help usage", [&]{ help(); exit(0); });
 
-    it = std::find_if(opts.begin(), opts.end(), [&](Option & o){ return o.short_opt == 'v'; });
-    add(Option("version", (it == opts.end() ? 'v' : '~'), "Show version", [&]{version(); exit(0); }));
+    it = std::find_if(opts.begin(), opts.end(), [&](option & o){ return o.short_opt == 'v'; });
+    opts.emplace_back("version", (it == opts.end() ? 'v' : '~'), "Show version", [&]{ version(); exit(0); });
 
     for (int i = 1; i < argc; ++i) 
     {
@@ -143,7 +151,8 @@ void parse(int argc, char * argv[])
                     case ' ' : break;
                     default  : // isgraph character, starting target
                         target += ch;
-                        state = Target;
+                        if (cmd.name.empty()) state = CommandOrTarget;
+                        else state = Target;
                         break; 
                 }
                 break;
@@ -156,7 +165,7 @@ void parse(int argc, char * argv[])
                         if (isgraph(ch)) // found short option
                         {
                             it = std::find_if(opts.begin(), opts.end(), 
-                                [&](Option & o){ return o.short_opt == ch; });
+                                [&](option & o){ return o.short_opt == ch; });
                             if (it == opts.end()) PANIC("invalid option: " << ch);
 
                             if (it->present) PANIC("option " << ch << " already present");
@@ -181,7 +190,7 @@ void parse(int argc, char * argv[])
                         if (isgraph(ch)) // found short option
                         {
                             it = std::find_if(opts.begin(), opts.end(), 
-                                [&](Option & o){ return o.short_opt == ch; });
+                                [&](option & o){ return o.short_opt == ch; });
                             if (it == opts.end()) PANIC("invalid option: " << ch);
                             if (it->present) PANIC("option " << ch << " already present");
                             it->present = true;
@@ -195,7 +204,7 @@ void parse(int argc, char * argv[])
                 {
                     case ' ': break;
                     case '\"': 
-                        WARN("setting to quoted value");
+                        // WARN("setting to quoted value");
                         value.clear();
                         state = QuotedValue;
                         break;
@@ -246,7 +255,7 @@ void parse(int argc, char * argv[])
                 switch (ch)
                 {
                     case ' ' :
-                        it = std::find_if(opts.begin(), opts.end(), [&](Option & o) 
+                        it = std::find_if(opts.begin(), opts.end(), [&](option & o) 
                             { return o.name == long_opt; });
                         if (it == opts.end()) PANIC("invalid option: " << long_opt);
                         it->present = true;
@@ -258,7 +267,7 @@ void parse(int argc, char * argv[])
                         else state = LookingForEqual;
                         break;
                     case '=' :
-                        it = std::find_if(opts.begin(), opts.end(), [&](Option & o) 
+                        it = std::find_if(opts.begin(), opts.end(), [&](option & o) 
                             { return o.name == long_opt; });
                         if (it == opts.end()) PANIC("invalid option: " << long_opt);
                         it->present = true;
@@ -282,7 +291,28 @@ void parse(int argc, char * argv[])
                         PANIC("expected '=' after \"" << long_opt << "\" option");
                 }
                 break;
-            case TargetStart :
+            case CommandOrTarget :
+                switch (ch) {
+                    case ' ': {
+                        auto it = std::find_if(commands.begin(), commands.end(), [&](auto & c){ return c.name == target; });
+                        if (it == commands.end()) { // not in command list
+                            targets.push_back(target);
+                            target.clear();
+                            state = LookingForTarget; // rest of command line are 0 or more targets
+                        } else {
+                            cmd = *it; // yes, its a command,
+                            opts = cmd.opts; // let's get some options
+                            target.clear();
+                            state = Idle;
+                        }
+
+                        break;
+                    }
+                    default:
+                        target +=ch;
+                }
+                break;
+            case LookingForTarget : 
                 switch (ch)
                 {
                     case ' ': break;
@@ -299,7 +329,7 @@ void parse(int argc, char * argv[])
                     case ' ': 
                         targets.push_back(target);
                         target.clear();
-                        state = TargetStart; // not Idle, since we don't allow post target options (yet)
+                        state = LookingForTarget; // not Idle, since we don't allow post target options (yet)
                         break;
                     default:
                         target +=ch;
@@ -311,18 +341,23 @@ void parse(int argc, char * argv[])
     }
 }
 
+void exec() {
+    if (!cmd.name.empty()) cmd.action();
+}
+
     std::vector<std::string> targets;
 
 
-    private:
-        std::vector<Option> opts;
-
+        std::vector<option> global_opts;
         std::vector<std::string> notes;
-
-        std::string cmd;
+        std::vector<command> commands;
+    private:
+        std::string version_no;
         std::string name;
+        std::string desc;
         std::string usage;
+        command cmd;
 
 };
-
+}
 }

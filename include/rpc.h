@@ -10,6 +10,8 @@
 
 using json = nlohmann::json;
 
+extern bool g_json_trace;
+
 namespace rpc {
     struct remote_endpoint {
         remote_endpoint() {
@@ -31,6 +33,8 @@ namespace rpc {
             size_t old_size = s->size();
             s->resize(old_size + bytes);
             std::copy((char *) contents, (char*) contents + bytes, s->begin() + old_size);
+            //WARN(bytes << ", " << *s);
+            
             return bytes;
         }
 
@@ -38,15 +42,24 @@ namespace rpc {
         std::string s;
     };
 
+    void trace(const json & j) {
+        if (g_json_trace) std::cerr << std::setw(4) << j << '\n';
+    }
+
     json request_remote(const std::string url) {
+        trace(url);
         remote_endpoint c;
         curl_easy_setopt(c.c, CURLOPT_URL, url.c_str());
+        // curl_easy_setopt(c.c, CURLOPT_VERBOSE, true);
+        //WARN("a");
         auto r = curl_easy_perform(c.c);
+        //WARN("b");
         if (r != CURLE_OK) PANIC("curl fail: " << curl_easy_strerror(r));
         auto j = json::parse(c.s);
         if (j.find("result") != j.end()) {
             if (j.at("result").get<std::string>() == "error") PANIC(url << " error: " << std::setw(4) << j);
         }
+        trace(j);
         return j;
     }
     
@@ -57,7 +70,8 @@ namespace rpc {
             strcpy(addr.sun_path, "lightning-rpc");
             addr.sun_family = AF_UNIX;
 
-            if (connect(fd, (struct sockaddr *) & addr, sizeof(addr)) != 0) PANIC("cannot connect to " << addr.sun_path);
+            auto e = connect(fd, (struct sockaddr *) & addr, sizeof(addr));
+            if (e != 0) PANIC("cannot connect to " << addr.sun_path << ": " << strerror(errno));
         }
 
         local_endpoint(const local_endpoint &) = delete;
@@ -77,10 +91,8 @@ namespace rpc {
             ssize_t done;
 
             done = write(fd, data, size);
-            if (done < 0 && errno == EINTR)
-                continue;
-            if (done <= 0)
-                return false;
+            if (done < 0 && errno == EINTR) continue;
+            if (done <= 0) return false;
             data = (const char *)data + done;
             size -= done;
         }
@@ -103,10 +115,21 @@ namespace rpc {
         return json::parse(v);
     }
 
+    bool has_error(const json & j) {
+        return (j.find("error") != j.end());
+    }
+
+    std::string error_message(const json & j) {
+        if (has_error(j)) return j["error"]["message"];
+    }
+
     json request_local(const json & req) {
         local_endpoint c;
+        trace(req);
         std::string s = req.dump();
         write_all(c.fd, s.data(), s.size());
-        return read_all(c);
+        auto j = read_all(c);
+        trace(j);
+        return j;
     }
 }
