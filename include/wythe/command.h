@@ -42,16 +42,21 @@ namespace wythe {
 
     };
 
-    struct command {
-        command() = default;
-        command (const std::string & name, const std::string & desc, std::function<void()>  action) : 
-            name(name), desc(desc), action(action) {}
-        std::string name;
-        std::string desc;
-        std::function<void()> action;
-        std::vector<option> opts;
-    };
 
+template <typename Opts> struct command {
+	command() = default;
+	command(const std::string &name, const std::string &desc,
+		std::function<void(Opts)> action)
+	    : name(name), desc(desc), action(action)
+	{
+	}
+	std::string name;
+	std::string desc;
+	std::function<void(Opts&)> action;
+	std::vector<option> opts;
+};
+
+template <typename Opts>
     class line {
     public:
     enum State {
@@ -123,8 +128,12 @@ void parse(int argc, char * argv[]) {
     std::vector<option>::iterator it;
 
     std::vector<option> & opts = global_opts;
-    // first, let's add help and version options.
-
+    // let's set all the global opts to their defaults
+    for (auto & opt : opts) {
+	    if (!opt.default_value.empty()) 
+		    opt.action(opt.default_value);
+    }
+    // let's add help and version options.
     it = std::find_if(opts.begin(), opts.end(), [&](option & o){ return o.short_opt == 'h'; });
     opts.emplace_back("help", (it == opts.end() ? 'h' : '~'), "Show this help usage", [&]{ help(); exit(0); });
 
@@ -345,18 +354,23 @@ void exec() {
     if (!cmd.name.empty()) cmd.action();
 }
 
+template <class... Args>
+void go(Args&&... args) {
+    if (!cmd.name.empty()) cmd.action(std::forward<Args>(args)...);
+}
+
     std::vector<std::string> targets;
 
 
         std::vector<option> global_opts;
         std::vector<std::string> notes;
-        std::vector<command> commands;
+        std::vector<command<Opts>> commands;
     private:
         std::string version_no;
         std::string name;
         std::string desc;
         std::string usage;
-        command cmd;
+        command<Opts> cmd;
 
 };
 }
