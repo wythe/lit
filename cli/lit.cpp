@@ -10,17 +10,19 @@
 using json = nlohmann::json;
 using satoshi = long long;
 
-const std::string name = "litcli";
-
 bool g_json_trace = false; // trace json commands
 
 struct opts {
+	opts() = default;
+	opts(const opts &) = delete;
+	opts& operator=(const opts&) = delete;
+
 	bool show_price = false;
 	satoshi sats = 0;
 	std::string peer_id, peer_addr;
 	std::string rpc_dir, rpc_file;
 	rpc::https https;
-	rpc::lightningd lightningd;
+	rpc::lightningd ld;
 };
 
 template <typename T> std::string dollars(T value)
@@ -61,10 +63,10 @@ std::string to_dollars(rpc::https & https, const satoshi &s)
 	return dollars(price * btc);
 }
 
-satoshi get_funds(rpc::lightningd & ld, rpc::https & https)
+satoshi get_funds(rpc::lightningd &ld, rpc::https &https)
 {
-	return 1;
-	json j = {{"method", "listfunds"}, {"id", name}, {"params", json::array()}};
+	json j = {
+	    {"method", "listfunds"}, {"id", ld.id}, {"params", json::array()}};
 
 	auto res = rpc::request_local(ld, j);
 	auto outputs = res["result"]["outputs"];
@@ -77,35 +79,36 @@ satoshi get_funds(rpc::lightningd & ld, rpc::https & https)
 	return total;
 }
 
-#if 0
 bool bech32 = true;
 
-std::string new_addr()
+void new_addr(opts &opts)
 {
 	std::string type = bech32 ? "bech32" : "p2sh-segwit";
-	json j = {{"method", "newaddr"}, {"id", name}, {"params", {type}}};
-	auto res = rpc::request_local(j);
-	return res["result"]["address"];
+	json j = {{"method", "newaddr"}, {"id", opts.ld.id}, {"params", {type}}};
+	auto res = rpc::request_local(opts.ld, j);
+	std::cout << res["result"]["address"] << '\n';
 }
-#endif
 
-void list_funds(struct opts & opts)
+void list_funds(struct opts &opts)
 {
-	std::cout << std::setw(4) << to_dollars(opts.https, get_funds(opts.lightningd, opts.https)) << '\n';
+	std::cout << std::setw(4)
+		  << to_dollars(opts.https,
+				get_funds(opts.ld, opts.https))
+		  << '\n';
 }
+void list_nodes(struct opts &opts)
+{
+	json j = {{"method", "listnodes"}, {"id", opts.ld.id}, {"params", {nullptr}}};
+	rpc::request_local(opts.ld, j);
+}
+
+void list_peers(struct opts &opts)
+{
+	json j = {{"method", "listpeers"}, {"id", opts.ld.id}, {"params", {nullptr}}};
+	rpc::request_local(opts.ld, j);
+}
+
 #if 0
-json list_nodes()
-{
-	json j = {{"method", "listnodes"}, {"id", name}, {"params", {nullptr}}};
-	return rpc::request_local(j);
-}
-
-json list_peers()
-{
-	json j = {{"method", "listpeers"}, {"id", name}, {"params", {nullptr}}};
-	return rpc::request_local(j);
-}
-
 json connect(const std::string &peer_id, const std::string &peer_addr)
 {
 	auto id = peer_id;
@@ -161,20 +164,20 @@ void fund_first(satoshi sats)
 
 int main(int argc, char **argv)
 {
-
 	try {
 		using namespace wythe::cli;
 		struct opts opts;
-		line<struct opts> line("0.1", "lit", "Bitcoin Lightning Wallet",
-			  "lit [options] [command] [command-options]");
+		line<struct opts> line(
+		    "0.1", "lit", "Bitcoin Lightning Wallet",
+		    "lit [options] [command] [command-options]");
 
-		line.global_opts.emplace_back("lightning-dir", 'L',
-			"lightning rpc dir", rpc::def_dir(), 
-		    [&](std::string const & d) { opts.rpc_dir = d; });
+		line.global_opts.emplace_back(
+		    "lightning-dir", 'L', "lightning rpc dir", rpc::def_dir(),
+		    [&](std::string const &d) { opts.rpc_dir = d; });
 
-		line.global_opts.emplace_back("rpc-file", 'R',  
-		    	"lightning rpc file", "lightning-rpc",
-			[&](std::string const & f) { opts.rpc_file = f; });
+		line.global_opts.emplace_back(
+		    "rpc-file", 'R', "lightning rpc file", "lightning-rpc",
+		    [&](std::string const &f) { opts.rpc_file = f; });
 
 		line.global_opts.emplace_back(
 		    "trace", 't', "Display rpc json request and response",
@@ -182,8 +185,7 @@ int main(int argc, char **argv)
 
 		line.commands.emplace_back(
 		    "listfunds", "Show funds available for opening channels",
-		    [&](auto opts){ list_funds(opts); });
-#if 0
+		    list_funds);
 		line.commands.emplace_back("listnodes",
 					   "List all the nodes we see",
 					   list_nodes);
@@ -193,11 +195,12 @@ int main(int argc, char **argv)
 		auto c = line.commands.emplace(
 		    line.commands.end(), "newaddr",
 		    "Request a new bitcoin address for use in funding channels",
-		    [&] { std::cout << new_addr() << '\n'; });
+		    new_addr);
 		c->opts.emplace_back(
 		    "p2sh", 'p', "Use p2sh-segwit address (default is bech32)",
 		    [&] { bech32 = false; });
 
+#if 0
 		c = line.commands.emplace(line.commands.end(), "connect",
 					  "Connect to another node",
 					  [&] { connect(peer_id, peer_addr); });
@@ -227,9 +230,9 @@ int main(int argc, char **argv)
 		line.notes.emplace_back("Use at your own demise.\n");
 		line.parse(argc, argv);
 
-		opts.lightningd.connect(opts.rpc_dir, opts.rpc_file);
+		opts.ld.connect(opts.rpc_dir, opts.rpc_file);
 
-		line.go(opts); // perform action
+		line.go(opts);
 
 #if 0
 		if (show_price) {
@@ -245,6 +248,6 @@ int main(int argc, char **argv)
 	} catch (std::invalid_argument &e) {
 		std::cerr << "invalid argument: " << e.what() << std::endl;
 	} catch (std::exception &e) {
-		std::cerr << e.what() << std::endl;
+		WARN(e.what());
 	}
 }

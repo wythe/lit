@@ -17,10 +17,14 @@ void trace(const json &j);
 namespace rpc
 {
 std::string def_dir();
+std::string name();
 
 struct lightningd {
-	lightningd() {};
+	lightningd();
+	lightningd(const lightningd &) = delete;
+	lightningd& operator=(const lightningd&) = delete;
 	~lightningd();
+	std::string id;
 	void connect(std::string const &dir, std::string const &filename);
 	int fd = -1;
 	struct sockaddr_un addr;
@@ -28,12 +32,16 @@ struct lightningd {
 
 struct https {
 	https();
+	https(const https &) = delete;
+	https& operator=(const https&) = delete;
 	~https();
 	static size_t write_callback(void *contents, size_t size, size_t n,
 				     std::string * s);
 	CURL *c;
 	std::string s;
 };
+
+json request_local(lightningd &c, const json &req);
 
 inline json request_remote(https & h, const std::string url)
 {
@@ -94,14 +102,6 @@ inline std::string error_message(const json &j)
 		return j["error"]["message"];
 }
 
-inline json request_local(lightningd &c, const json &req)
-{
-	trace(req);
-	std::string s = req.dump();
-	write_all(c.fd, s.data(), s.size());
-	auto j = read_all(c);
-	trace(j);
-	return j;
-}
+
 }
 

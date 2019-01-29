@@ -1,4 +1,5 @@
 #include <string>
+#include <unistd.h>
 #include "rpc.h"
 
 void trace(const json &j)
@@ -17,8 +18,12 @@ std::string rpc::def_dir()
 
 	path = env;
 	path += "/.lightning";
-	WARN("dir is " << path);
 	return path;
+}
+
+rpc::lightningd::lightningd()
+{
+	id = "lit-cli-" + std::to_string(getpid());
 }
 
 void rpc::lightningd::connect(std::string const &dir, std::string const &filename)
@@ -36,15 +41,12 @@ void rpc::lightningd::connect(std::string const &dir, std::string const &filenam
 	if (e != 0)
 		PANIC("cannot connect to " << addr.sun_path << ": "
 					   << strerror(errno));
-	WARN("connected to lightningd");
 }
 
 
 rpc::lightningd::~lightningd()
 {
-	WARN("A");
 	if (fd != -1) {
-		WARN("closing lightningd rpc");
 		close(fd);
 		fd = -1;
 	}
@@ -62,7 +64,10 @@ rpc::https::https()
 	curl_easy_setopt(c, CURLOPT_WRITEDATA, &s);
 }
 
-rpc::https::~https() { curl_global_cleanup(); }
+rpc::https::~https()
+{
+	curl_global_cleanup();
+}
 
 size_t rpc::https::write_callback(void *contents, size_t size, size_t n,
 			     std::string *s)
@@ -73,4 +78,15 @@ size_t rpc::https::write_callback(void *contents, size_t size, size_t n,
 	std::copy((char *)contents, (char *)contents + bytes,
 		  s->begin() + old_size);
 	return bytes;
+}
+
+
+json rpc::request_local(rpc::lightningd &c, const json &req)
+{
+	trace(req);
+	std::string s = req.dump();
+	rpc::write_all(c.fd, s.data(), s.size());
+	auto j = read_all(c);
+	trace(j);
+	return j;
 }

@@ -45,14 +45,13 @@ namespace wythe {
 
 template <typename Opts> struct command {
 	command() = default;
-	command(const std::string &name, const std::string &desc,
-		std::function<void(Opts)> action)
+	command(const std::string &name, const std::string &desc, void(*action)(Opts &))
 	    : name(name), desc(desc), action(action)
 	{
 	}
 	std::string name;
 	std::string desc;
-	std::function<void(Opts&)> action;
+	void(*action)(Opts &);
 	std::vector<option> opts;
 };
 
@@ -119,235 +118,287 @@ void version () const {
     std::cout << name << " version " << version_no << '\n';
 }
 
-void parse(int argc, char * argv[]) {
-    State state = Idle;
-    std::string cl;
-    std::string target;
-    std::string long_opt;
-    std::string value;
-    std::vector<option>::iterator it;
+void set_defaults(auto opts) {
+	for (auto &opt : opts) {
+		if (!opt.default_value.empty())
+			opt.action(opt.default_value);
+	}
+}
 
-    std::vector<option> & opts = global_opts;
-    // let's set all the global opts to their defaults
-    for (auto & opt : opts) {
-	    if (!opt.default_value.empty()) 
-		    opt.action(opt.default_value);
-    }
-    // let's add help and version options.
-    it = std::find_if(opts.begin(), opts.end(), [&](option & o){ return o.short_opt == 'h'; });
-    opts.emplace_back("help", (it == opts.end() ? 'h' : '~'), "Show this help usage", [&]{ help(); exit(0); });
+void parse(int argc, char *argv[])
+{
+	State state = Idle;
+	std::string cl;
+	std::string target;
+	std::string long_opt;
+	std::string value;
+	std::vector<option>::iterator it;
 
-    it = std::find_if(opts.begin(), opts.end(), [&](option & o){ return o.short_opt == 'v'; });
-    opts.emplace_back("version", (it == opts.end() ? 'v' : '~'), "Show version", [&]{ version(); exit(0); });
+	std::vector<option> &opts = global_opts;
+	// let's set all the global opts to their defaults
+	set_defaults(global_opts);
+	// let's add help and version options.
+	it = std::find_if(opts.begin(), opts.end(),
+			  [&](option &o) { return o.short_opt == 'h'; });
+	opts.emplace_back("help", (it == opts.end() ? 'h' : '~'),
+			  "Show this help usage", [&] {
+				  help();
+				  exit(0);
+			  });
 
-    for (int i = 1; i < argc; ++i) 
-    {
-        cl += argv[i];
-        if (i != argc-1) cl+= ' ';
-    }
-    cl += ' ';
-    //PRINT("parse: " << cl);
+	it = std::find_if(opts.begin(), opts.end(),
+			  [&](option &o) { return o.short_opt == 'v'; });
+	opts.emplace_back("version", (it == opts.end() ? 'v' : '~'),
+			  "Show version", [&] {
+				  version();
+				  exit(0);
+			  });
 
-    for (auto ch : cl)
-    {
-        //WARN("ch = " << ch);
-        switch (state)
-        {
-            case Idle: // looking for the first character
-                switch (ch)
-                {
-                    case '-' : state = ShortStart; break;
-                    case ' ' : break;
-                    default  : // isgraph character, starting target
-                        target += ch;
-                        if (cmd.name.empty()) state = CommandOrTarget;
-                        else state = Target;
-                        break; 
-                }
-                break;
-            case ShortStart: // first '-' 
-                switch (ch)
-                {
-                    case '-' : state = LongOptionStart; break;
-                    case ' ' : PANIC("illegal \"- \" sequence");
-                    default :
-                        if (isgraph(ch)) // found short option
-                        {
-                            it = std::find_if(opts.begin(), opts.end(), 
-                                [&](option & o){ return o.short_opt == ch; });
-                            if (it == opts.end()) PANIC("invalid option: " << ch);
+	for (int i = 1; i < argc; ++i) {
+		cl += argv[i];
+		if (i != argc - 1)
+			cl += ' ';
+	}
+	cl += ' ';
+	// PRINT("parse: " << cl);
 
-                            if (it->present) PANIC("option " << ch << " already present");
-                            it->present = true;
-                            // do it!  We may want to save the actions until parsing is complete, in case
-                            // there are errors later in command line
-                            if (it->flag) 
-                            {
-                                it->binary_action(); 
-                                state = ShortContinue;
-                            }
-                            else state = ValueStart;
-                        } 
-                }
-                break;
-            case ShortContinue: // possibly more short opts
-                switch (ch)
-                {
-                    case '-' : PANIC("illegal \"-\" character");
-                    case ' ' : state = Idle;
-                    default :
-                        if (isgraph(ch)) // found short option
-                        {
-                            it = std::find_if(opts.begin(), opts.end(), 
-                                [&](option & o){ return o.short_opt == ch; });
-                            if (it == opts.end()) PANIC("invalid option: " << ch);
-                            if (it->present) PANIC("option " << ch << " already present");
-                            it->present = true;
-                            if (it->flag) it->binary_action(); 
-                            else state = ValueStart;
-                        } 
-                }
-                break;
-            case ValueStart: 
-                switch (ch)
-                {
-                    case ' ': break;
-                    case '\"': 
-                        // WARN("setting to quoted value");
-                        value.clear();
-                        state = QuotedValue;
-                        break;
-                        
-                    default:
-                        value.clear();
-                        value += ch;
-                        state = Value;
-                        
-                }
-                break;
-            case Value:
-                switch (ch) {
-                    case ' ': 
-                        it->action(value); 
-                        state = Idle;
-                        break;
-                    default:
-                        value += ch;
-                }
-                
-                break;
-            case QuotedValue:
-                switch (ch) {
-                    case '\"': 
-                        it->action(value); 
-                        state = Idle;
-                        break;
-                    default:
-                        value += ch;
-                }
-                
-                break;
-            case LongOptionStart: // "--"
-                //PRINT("LongOptionStart");
-                if (isgraph(ch))
-                {
-                    long_opt.clear();
-                    long_opt += ch;
-                    state = LongOption;
-                } else {
-                    PANIC("illegal \"--" << ch <<  "\" sequence");
-                }
-                break;
+	for (auto ch : cl) {
+		// WARN("ch = " << ch);
+		switch (state) {
+		case Idle: // looking for the first character
+			switch (ch) {
+			case '-':
+				state = ShortStart;
+				break;
+			case ' ':
+				break;
+			default: // isgraph character, starting target
+				target += ch;
+				if (cmd.name.empty())
+					state = CommandOrTarget;
+				else
+					state = Target;
+				break;
+			}
+			break;
+		case ShortStart: // first '-'
+			switch (ch) {
+			case '-':
+				state = LongOptionStart;
+				break;
+			case ' ':
+				PANIC("illegal \"- \" sequence");
+			default:
+				if (isgraph(ch)) // found short option
+				{
+					it = std::find_if(
+					    opts.begin(), opts.end(),
+					    [&](option &o) {
+						    return o.short_opt == ch;
+					    });
+					if (it == opts.end())
+						PANIC("invalid option: " << ch);
 
-            case LongOption:
-                //PRINT("LongOption");
-                switch (ch)
-                {
-                    case ' ' :
-                        it = std::find_if(opts.begin(), opts.end(), [&](option & o) 
-                            { return o.name == long_opt; });
-                        if (it == opts.end()) PANIC("invalid option: " << long_opt);
-                        it->present = true;
-                        if (it->flag) 
-                        {
-                            it->binary_action(); 
-                            state = Idle;
-                        }
-                        else state = LookingForEqual;
-                        break;
-                    case '=' :
-                        it = std::find_if(opts.begin(), opts.end(), [&](option & o) 
-                            { return o.name == long_opt; });
-                        if (it == opts.end()) PANIC("invalid option: " << long_opt);
-                        it->present = true;
-                        if (it->flag) PANIC("value not expected for option: " << long_opt);
-                        state = ValueStart;
-                    default :
-                        long_opt += ch;
-                        break;
+					if (it->present)
+						PANIC("option "
+						      << ch
+						      << " already present");
+					it->present = true;
+					// do it!  We may want to save the
+					// actions until parsing is complete, in
+					// case
+					// there are errors later in command
+					// line
+					if (it->flag) {
+						it->binary_action();
+						state = ShortContinue;
+					} else
+						state = ValueStart;
+				}
+			}
+			break;
+		case ShortContinue: // possibly more short opts
+			switch (ch) {
+			case '-':
+				PANIC("illegal \"-\" character");
+			case ' ':
+				state = Idle;
+			default:
+				if (isgraph(ch)) // found short option
+				{
+					it = std::find_if(
+					    opts.begin(), opts.end(),
+					    [&](option &o) {
+						    return o.short_opt == ch;
+					    });
+					if (it == opts.end())
+						PANIC("invalid option: " << ch);
+					if (it->present)
+						PANIC("option "
+						      << ch
+						      << " already present");
+					it->present = true;
+					if (it->flag)
+						it->binary_action();
+					else
+						state = ValueStart;
+				}
+			}
+			break;
+		case ValueStart:
+			switch (ch) {
+			case ' ':
+				break;
+			case '\"':
+				// WARN("setting to quoted value");
+				value.clear();
+				state = QuotedValue;
+				break;
 
-                }
-                break;
+			default:
+				value.clear();
+				value += ch;
+				state = Value;
+			}
+			break;
+		case Value:
+			switch (ch) {
+			case ' ':
+				it->action(value);
+				state = Idle;
+				break;
+			default:
+				value += ch;
+			}
 
-            case LookingForEqual :
-                switch (ch)
-                {
-                    case ' ': break;
-                    case '=':
-                        state = ValueStart;
-                        break;
-                    default:
-                        PANIC("expected '=' after \"" << long_opt << "\" option");
-                }
-                break;
-            case CommandOrTarget :
-                switch (ch) {
-                    case ' ': {
-                        auto it = std::find_if(commands.begin(), commands.end(), [&](auto & c){ return c.name == target; });
-                        if (it == commands.end()) { // not in command list
-                            targets.push_back(target);
-                            target.clear();
-                            state = LookingForTarget; // rest of command line are 0 or more targets
-                        } else {
-                            cmd = *it; // yes, its a command,
-                            opts = cmd.opts; // let's get some options
-                            target.clear();
-                            state = Idle;
-                        }
+			break;
+		case QuotedValue:
+			switch (ch) {
+			case '\"':
+				it->action(value);
+				state = Idle;
+				break;
+			default:
+				value += ch;
+			}
 
-                        break;
-                    }
-                    default:
-                        target +=ch;
-                }
-                break;
-            case LookingForTarget : 
-                switch (ch)
-                {
-                    case ' ': break;
+			break;
+		case LongOptionStart: // "--"
+			// PRINT("LongOptionStart");
+			if (isgraph(ch)) {
+				long_opt.clear();
+				long_opt += ch;
+				state = LongOption;
+			} else {
+				PANIC("illegal \"--" << ch << "\" sequence");
+			}
+			break;
 
-                    default:
-                        target += ch;
-                        state = Target;
-                }
-                break;
+		case LongOption:
+			// PRINT("LongOption");
+			switch (ch) {
+			case ' ':
+				it = std::find_if(
+				    opts.begin(), opts.end(), [&](option &o) {
+					    return o.name == long_opt;
+				    });
+				if (it == opts.end())
+					PANIC("invalid option: " << long_opt);
+				it->present = true;
+				if (it->flag) {
+					it->binary_action();
+					state = Idle;
+				} else
+					state = LookingForEqual;
+				break;
+			case '=':
+				it = std::find_if(
+				    opts.begin(), opts.end(), [&](option &o) {
+					    return o.name == long_opt;
+				    });
+				if (it == opts.end())
+					PANIC("invalid option: " << long_opt);
+				it->present = true;
+				if (it->flag)
+					PANIC("value not expected for option: "
+					      << long_opt);
+				state = ValueStart;
+			default:
+				long_opt += ch;
+				break;
+			}
+			break;
 
-            case Target :
-                switch (ch)
-                {
-                    case ' ': 
-                        targets.push_back(target);
-                        target.clear();
-                        state = LookingForTarget; // not Idle, since we don't allow post target options (yet)
-                        break;
-                    default:
-                        target +=ch;
-                }
-                break;
-            default:
-                PANIC("panic!");
-        }
-    }
+		case LookingForEqual:
+			switch (ch) {
+			case ' ':
+				break;
+			case '=':
+				state = ValueStart;
+				break;
+			default:
+				PANIC("expected '=' after \"" << long_opt
+							      << "\" option");
+			}
+			break;
+		case CommandOrTarget:
+			switch (ch) {
+			case ' ': {
+				auto it = std::find_if(
+				    commands.begin(), commands.end(),
+				    [&](auto &c) { return c.name == target; });
+				if (it ==
+				    commands.end()) { // not in command list
+					targets.push_back(target);
+					target.clear();
+					state =
+					    LookingForTarget; // rest of command
+							      // line are 0 or
+							      // more targets
+				} else {
+					cmd = *it; // yes, its a command,
+ 					// let's get some options
+					opts = cmd.opts;
+					set_defaults(opts);
+					target.clear();
+					state = Idle;
+				}
+
+				break;
+			}
+			default:
+				target += ch;
+			}
+			break;
+		case LookingForTarget:
+			switch (ch) {
+			case ' ':
+				break;
+
+			default:
+				target += ch;
+				state = Target;
+			}
+			break;
+
+		case Target:
+			switch (ch) {
+			case ' ':
+				targets.push_back(target);
+				target.clear();
+				state = LookingForTarget; // not Idle, since we
+							  // don't allow post
+							  // target options
+							  // (yet)
+				break;
+			default:
+				target += ch;
+			}
+			break;
+		default:
+			PANIC("panic!");
+		}
+	}
 }
 
 void exec() {
