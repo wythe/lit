@@ -173,52 +173,54 @@ void fund_first(satoshi sats)
 }
 #endif
 
+template <typename T>
+wythe::cli::line<T> parse_opts(T &opts, int argc, char **argv)
+{
+	using namespace wythe::cli;
+	line<T> line("0.0.1", "lit", "Lightning Stuff",
+		     "lit [options] [command] [command-options]");
+
+	line.global_opts.emplace_back(
+	    "lightning-dir", 'L', "lightning rpc dir", rpc::def_dir(),
+	    [&](std::string const &d) { opts.rpc_dir = d; });
+
+	line.global_opts.emplace_back(
+	    "rpc-file", 'R', "lightning rpc file", "lightning-rpc",
+	    [&](std::string const &f) { opts.rpc_file = f; });
+
+	line.global_opts.emplace_back("trace", 't',
+				      "Display rpc json request and response",
+				      [&] { g_json_trace = true; });
+
+	line.commands.emplace_back("listfunds",
+				   "Show funds available for opening channels",
+				   list_funds);
+	line.commands.emplace_back("listnodes", "List all the nodes we see",
+				   list_nodes);
+	line.commands.emplace_back("listpeers", "List our peers", list_peers);
+
+	auto c = line.commands.emplace(
+	    line.commands.end(), "newaddr",
+	    "Request a new bitcoin address for use in funding channels",
+	    new_addr);
+	c->opts.emplace_back("p2sh", 'p',
+			     "Use p2sh-segwit address (default is bech32)",
+			     [&] { bech32 = false; });
+
+	line.commands.emplace_back(
+	    "getinfo", "Display summary information on channels", getinfo);
+
+	line.notes.emplace_back("Use at your own demise.\n");
+	line.parse(argc, argv);
+	return line;
+}
+
 int main(int argc, char **argv)
 {
 	try {
-		using namespace wythe::cli;
-		struct opts opts;
-		line<struct opts> line(
-		    "0.0.1", "lit", "Lightning Stuff",
-		    "lit [options] [command] [command-options]");
-
-		line.global_opts.emplace_back(
-		    "lightning-dir", 'L', "lightning rpc dir", rpc::def_dir(),
-		    [&](std::string const &d) { opts.rpc_dir = d; });
-
-		line.global_opts.emplace_back(
-		    "rpc-file", 'R', "lightning rpc file", "lightning-rpc",
-		    [&](std::string const &f) { opts.rpc_file = f; });
-
-		line.global_opts.emplace_back(
-		    "trace", 't', "Display rpc json request and response",
-		    [&] { g_json_trace = true; });
-
-		line.commands.emplace_back(
-		    "listfunds", "Show funds available for opening channels",
-		    list_funds);
-		line.commands.emplace_back(
-		    "listnodes", "List all the nodes we see", list_nodes);
-		line.commands.emplace_back("listpeers", "List our peers",
-					   list_peers);
-
-		auto c = line.commands.emplace(
-		    line.commands.end(), "newaddr",
-		    "Request a new bitcoin address for use in funding channels",
-		    new_addr);
-		c->opts.emplace_back(
-		    "p2sh", 'p', "Use p2sh-segwit address (default is bech32)",
-		    [&] { bech32 = false; });
-
-		line.commands.emplace_back(
-		    "getinfo", "Display summary information on channels",
-		    getinfo);
-
-		line.notes.emplace_back("Use at your own demise.\n");
-		line.parse(argc, argv);
-
+		opts opts;
+		auto line = parse_opts(opts, argc, argv);
 		rpc::connect(opts.ld, opts.rpc_dir, opts.rpc_file);
-
 		line.go(opts);
 
 		// if (!line.targets.empty()) PANIC("unrecognize command line
