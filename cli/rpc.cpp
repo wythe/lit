@@ -4,6 +4,19 @@
 
 namespace rpc
 {
+uds_rpc::uds_rpc(const std::string & name)
+{ 
+	id = name + "-" + std::to_string(getpid());
+}
+
+uds_rpc::~uds_rpc()
+{
+	if (fd != -1) {
+		close(fd);
+		fd = -1;
+	}
+}
+
 static bool write_all(int fd, const void *data, size_t size)
 {
 	while (size) {
@@ -27,20 +40,7 @@ void trace(const json &j)
 		std::cerr << std::setw(4) << j << '\n';
 }
 
-std::string def_dir()
-{
-	std::string path;
-
-	const char *env = getenv("HOME");
-	if (!env)
-		PANIC("HOME environment undefined");
-
-	path = env;
-	path += "/.lightning";
-	return path;
-}
-
-int connect_local(std::string const &dir, std::string const &filename)
+int connect(std::string const &dir, std::string const &filename)
 {
 	int fd;
 	struct sockaddr_un addr;
@@ -78,7 +78,7 @@ json read_all(int fd)
 	int r;
 	while (r = read(fd, &ch, 1)) {
 		if (r <= 0)
-			PANIC("error talking to fd");
+			PANIC("error talking to fd: " << r);
 		v.push_back(ch);
 		int avail;
 		ioctl(fd, FIONREAD, &avail);

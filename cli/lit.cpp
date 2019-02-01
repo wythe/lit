@@ -15,7 +15,8 @@ using satoshi = long long;
 bool g_json_trace = false; // trace json commands
 
 struct opts {
-	opts() = default;
+	opts() : ld("lit-cli") {}
+
 	opts(const opts &) = delete;
 	opts &operator=(const opts &) = delete;
 
@@ -23,8 +24,9 @@ struct opts {
 	satoshi sats = 0;
 	std::string peer_id, peer_addr;
 	std::string rpc_dir, rpc_file;
+	std::string brpc_dir, brpc_file;
 	rpc::web::https https;
-	rpc::ln::lightningd ld;
+	rpc::uds_rpc ld;
 };
 
 template <typename T> std::string dollars(T value)
@@ -65,7 +67,7 @@ std::string to_dollars(rpc::web::https &https, const satoshi &s)
 	return dollars(price * btc);
 }
 
-satoshi get_funds(rpc::ln::lightningd &ld, rpc::web::https &https)
+satoshi get_funds(rpc::uds_rpc &ld, rpc::web::https &https)
 {
 	json j = {
 	    {"method", "listfunds"}, {"id", ld.id}, {"params", json::array()}};
@@ -101,6 +103,11 @@ void list_funds(struct opts &opts)
 void list_nodes(struct opts &opts)
 {
 	std::cout << std::setw(4) << rpc::ln::nodes(opts.ld);
+}
+
+void getnetworkinfo(struct opts &opts)
+{
+	std::cout << std::setw(4) << rpc::btc::getnetworkinfo();
 }
 
 void list_peers(struct opts &opts)
@@ -180,10 +187,10 @@ wythe::cli::line<T> parse_opts(T &opts, int argc, char **argv)
 	line<T> line("0.0.1", "lit", "Lightning Stuff",
 		     "lit [options] [command] [command-options]");
 
-	add_opt(line, "lightning-dir", 'L', "lightning rpc dir", rpc::def_dir(),
+	add_opt(line, "ln-dir", 'L', "lightning rpc dir", rpc::ln::def_dir(),
 		[&](std::string const &d) { opts.rpc_dir = d; });
 
-	add_opt(line, "rpc-file", 'R', "lightning rpc file", "lightning-rpc",
+	add_opt(line, "ln-rpc-file", 'f', "lightning rpc file", "lightning-rpc",
 		[&](std::string const &f) { opts.rpc_file = f; });
 
 	add_opt(line, "trace", 't', "Display rpc json request and response",
@@ -192,6 +199,8 @@ wythe::cli::line<T> parse_opts(T &opts, int argc, char **argv)
 	add_cmd(line, "listfunds", "Show funds available for opening channels",
 		list_funds);
 	add_cmd(line, "listnodes", "List all the nodes we see", list_nodes);
+	add_cmd(line, "getnetworkinfo", "Show bitcoin network inf", getnetworkinfo);
+
 	add_cmd(line, "listpeers", "List our peers", list_peers);
 	auto c =
 	    emp_cmd(line, "newaddr",
@@ -213,7 +222,7 @@ int main(int argc, char **argv)
 	try {
 		opts opts;
 		auto line = parse_opts(opts, argc, argv);
-		rpc::connect(opts.ld, opts.rpc_dir, opts.rpc_file);
+		opts.ld.fd = rpc::connect(opts.rpc_dir, opts.rpc_file);
 		line.go(opts);
 
 		// if (!line.targets.empty()) PANIC("unrecognize command line

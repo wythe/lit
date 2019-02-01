@@ -14,6 +14,17 @@ extern bool g_json_trace;
 
 namespace rpc
 {
+
+// unix domain socket json rpc
+struct uds_rpc {
+	uds_rpc(const std::string & prefix);
+	uds_rpc(const uds_rpc &) = delete;
+	uds_rpc &operator=(const uds_rpc &) = delete;
+	~uds_rpc();
+	std::string id;
+	int fd = -1;
+};
+
 void trace(const json &j);
 std::string def_dir();
 std::string name();
@@ -26,9 +37,6 @@ bool has_error(const json &j);
 
 std::string error_message(const json &j);
 
-int connect_local(std::string const &dir, std::string const &filename);
+int connect(std::string const &dir, std::string const &filename);
 
-void connect(auto &d, std::string const &dir, std::string const &filename) {
-	d.fd = connect_local(dir, filename);
-}
 } // rpc

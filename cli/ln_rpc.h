@@ -5,16 +5,13 @@ namespace rpc
 {
 namespace ln
 {
-struct lightningd {
-	lightningd();
-	lightningd(const lightningd &) = delete;
-	lightningd &operator=(const lightningd &) = delete;
-	~lightningd();
-	std::string id;
-	int fd = -1;
-};
-
-json peers(const lightningd &ld);
-json nodes(const lightningd &ld);
+std::string def_dir();
+json peers(const uds_rpc &ld);
+json nodes(const uds_rpc &ld);
 }
+
+namespace btc {
+json getnetworkinfo();
+}
+
 }
