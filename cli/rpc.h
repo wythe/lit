@@ -20,8 +20,6 @@ std::string name();
 
 json request_local(int fd, const json &req);
 
-bool write_all(int fd, const void *data, size_t size);
-
 json read_all(int fd);
 
 bool has_error(const json &j);

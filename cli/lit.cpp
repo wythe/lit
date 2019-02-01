@@ -180,38 +180,31 @@ wythe::cli::line<T> parse_opts(T &opts, int argc, char **argv)
 	line<T> line("0.0.1", "lit", "Lightning Stuff",
 		     "lit [options] [command] [command-options]");
 
-	line.global_opts.emplace_back(
-	    "lightning-dir", 'L', "lightning rpc dir", rpc::def_dir(),
-	    [&](std::string const &d) { opts.rpc_dir = d; });
+	add_opt(line, "lightning-dir", 'L', "lightning rpc dir", rpc::def_dir(),
+		[&](std::string const &d) { opts.rpc_dir = d; });
 
-	line.global_opts.emplace_back(
-	    "rpc-file", 'R', "lightning rpc file", "lightning-rpc",
-	    [&](std::string const &f) { opts.rpc_file = f; });
+	add_opt(line, "rpc-file", 'R', "lightning rpc file", "lightning-rpc",
+		[&](std::string const &f) { opts.rpc_file = f; });
 
-	line.global_opts.emplace_back("trace", 't',
-				      "Display rpc json request and response",
-				      [&] { g_json_trace = true; });
+	add_opt(line, "trace", 't', "Display rpc json request and response",
+		[&] { g_json_trace = true; });
 
-	line.commands.emplace_back("listfunds",
-				   "Show funds available for opening channels",
-				   list_funds);
-	line.commands.emplace_back("listnodes", "List all the nodes we see",
-				   list_nodes);
-	line.commands.emplace_back("listpeers", "List our peers", list_peers);
+	add_cmd(line, "listfunds", "Show funds available for opening channels",
+		list_funds);
+	add_cmd(line, "listnodes", "List all the nodes we see", list_nodes);
+	add_cmd(line, "listpeers", "List our peers", list_peers);
+	auto c =
+	    emp_cmd(line, "newaddr",
+		    "Request a new bitcoin address for use in funding channels",
+		    new_addr);
+	add_opt(*c, "p2sh", 'p', "Use p2sh-segwit address (default is bech32)",
+		[&] { bech32 = false; });
 
-	auto c = line.commands.emplace(
-	    line.commands.end(), "newaddr",
-	    "Request a new bitcoin address for use in funding channels",
-	    new_addr);
-	c->opts.emplace_back("p2sh", 'p',
-			     "Use p2sh-segwit address (default is bech32)",
-			     [&] { bech32 = false; });
-
-	line.commands.emplace_back(
-	    "getinfo", "Display summary information on channels", getinfo);
+	add_cmd(line, "getinfo", "Display summary information on channels",
+		getinfo);
 
 	line.notes.emplace_back("Use at your own demise.\n");
-	line.parse(argc, argv);
+	parse(line, argc, argv);
 	return line;
 }
 

@@ -19,6 +19,5 @@ struct https {
 };
 
 json request(https &h, const std::string url);
-
 }
 }

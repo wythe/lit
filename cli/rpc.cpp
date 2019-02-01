@@ -4,6 +4,23 @@
 
 namespace rpc
 {
+static bool write_all(int fd, const void *data, size_t size)
+{
+	while (size) {
+		ssize_t done;
+
+		done = write(fd, data, size);
+		if (done < 0 && errno == EINTR)
+			continue;
+		if (done <= 0)
+			return false;
+		data = (const char *)data + done;
+		size -= done;
+	}
+
+	return true;
+}
+
 void trace(const json &j)
 {
 	if (g_json_trace)
@@ -51,23 +68,6 @@ json request_local(int fd, const json &req)
 	auto j = read_all(fd);
 	trace(j);
 	return j;
-}
-
-inline bool write_all(int fd, const void *data, size_t size)
-{
-	while (size) {
-		ssize_t done;
-
-		done = write(fd, data, size);
-		if (done < 0 && errno == EINTR)
-			continue;
-		if (done <= 0)
-			return false;
-		data = (const char *)data + done;
-		size -= done;
-	}
-
-	return true;
 }
 
 json read_all(int fd)
