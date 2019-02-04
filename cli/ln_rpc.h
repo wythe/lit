@@ -11,7 +11,20 @@ json nodes(const uds_rpc &ld);
 }
 
 namespace btc {
-json getnetworkinfo();
+std::string def_dir();
+std::string userpass();
+
+struct btc_rpc {
+	btc_rpc();
+	btc_rpc(const btc_rpc &) = delete;
+	btc_rpc &operator=(const btc_rpc &) = delete;
+	~btc_rpc();
+	CURL *c;
+	std::string s;
+	std::string id;
+};
+
+json getnetworkinfo(const btc_rpc &bd);
 }
 
 }

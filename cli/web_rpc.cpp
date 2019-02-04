@@ -18,7 +18,7 @@ static size_t write_callback(void *contents, size_t size, size_t n,
 json request(https &h, const std::string url)
 {
 	trace(url);
-	curl_easy_setopt(h.c, CURLOPT_URL, url.c_str());
+	curl_assert(curl_easy_setopt(h.c, CURLOPT_URL, url.c_str()));
 	auto r = curl_easy_perform(h.c);
 	if (r != CURLE_OK)
 		PANIC("curl fail: " << curl_easy_strerror(r));
@@ -33,16 +33,21 @@ json request(https &h, const std::string url)
 
 https::https()
 {
-	curl_global_init(CURL_GLOBAL_DEFAULT);
+	curl_assert(curl_global_init(CURL_GLOBAL_DEFAULT));
 	c = curl_easy_init();
 	if (!c)
-		PANIC("internet error");
-	curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 0L);
-	curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 0L);
-	curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, rpc::web::write_callback);
-	curl_easy_setopt(c, CURLOPT_WRITEDATA, &s);
+		PANIC("curl init error");
+
+	curl_assert(curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 0L));
+	curl_assert(curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 0L));
+	curl_assert(curl_easy_setopt(c, CURLOPT_WRITEFUNCTION,
+				     rpc::web::write_callback));
+	curl_assert(curl_easy_setopt(c, CURLOPT_WRITEDATA, &s));
 }
 
-https::~https() { curl_global_cleanup(); }
+https::~https()
+{
+	curl_global_cleanup();
+}
 }
 }

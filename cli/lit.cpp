@@ -15,8 +15,7 @@ using satoshi = long long;
 bool g_json_trace = false; // trace json commands
 
 struct opts {
-	opts() : ld("lit-cli") {}
-
+	opts() = default;
 	opts(const opts &) = delete;
 	opts &operator=(const opts &) = delete;
 
@@ -27,6 +26,7 @@ struct opts {
 	std::string brpc_dir, brpc_file;
 	rpc::web::https https;
 	rpc::uds_rpc ld;
+	rpc::btc::btc_rpc bd;
 };
 
 template <typename T> std::string dollars(T value)
@@ -107,7 +107,7 @@ void list_nodes(struct opts &opts)
 
 void getnetworkinfo(struct opts &opts)
 {
-	std::cout << std::setw(4) << rpc::btc::getnetworkinfo();
+	std::cout << std::setw(4) << rpc::btc::getnetworkinfo(opts.bd);
 }
 
 void list_peers(struct opts &opts)
@@ -124,6 +124,10 @@ void getinfo(struct opts &opts)
 
 	WARN(nodes["result"]["nodes"].size() << " nodes");
 	WARN(peers["result"]["peers"].size() << " peers");
+
+	// get #confirms (i.e. age)
+	// bitcoin-cli getblockcount
+	// bitcoin-cli gettxout <tx_id> 1
 }
 
 #if 0

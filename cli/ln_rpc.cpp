@@ -1,4 +1,5 @@
 #include "ln_rpc.h"
+#include <wythe/common.h>
 
 namespace rpc
 {
@@ -21,20 +22,29 @@ std::string def_dir()
 json peers(const uds_rpc &ld)
 {
 	json j = {
-	    {"method", "listpeers"}, {"id", ld.id}, {"params", {nullptr}}};
+	    {"id", id()}, {"method", "listpeers"}, {"params", {nullptr}}};
 	return request_local(ld.fd, j);
 }
 
 json nodes(const uds_rpc &ld)
 {
 	json j = {
-	    {"method", "listnodes"}, {"id", ld.id}, {"params", {nullptr}}};
+	    {"id", id()}, {"jsonrpc", "2.0"}, {"method", "listnodes"}, {"params", {nullptr}}};
 	return request_local(ld.fd, j);
 }
 } //ln
 
 namespace btc
 {
+
+btc_rpc::btc_rpc() {
+	curl_assert(curl_global_init(CURL_GLOBAL_DEFAULT));
+	c = curl_easy_init();
+	if (!c)
+		PANIC("curl init error");
+
+}
+
 std::string def_dir()
 {
 	std::string path;
@@ -48,46 +58,71 @@ std::string def_dir()
 	return path;
 }
 
-void curl_get()
+/*
+ * Do this in lieu of a proper config file loader.
+ */
+static std::string get_config_value(auto first, auto last, const std::string & key)
 {
-    CURL *curl = curl_easy_init();
-    struct curl_slist *headers = NULL;
+	auto it = std::find_if(first, last, [&](const std::string &l){
+		return wythe::starts_with(l, key);
+	});
 
-    if (curl) {
-	const char *data =
-	    "{\"jsonrpc\": \"1.0\", \"id\":\"curltest\", \"method\": \"getnetworkinfo\", \"params\": [] }";
+	if (it == last)
+		PANIC("no " << key << "found");
+	auto l = wythe::split(*it, '=');
+	if (l.size() != 2)
+		PANIC("config value parse error for key " << key);
+	return l[1];
+}
+
+std::string userpass()
+{
+	auto fn = def_dir();
+	fn += "/bitcoin.conf";
+	auto file = wythe::read_file(fn);
+	auto lines = wythe::line_split(file.begin(), file.end());
+	auto v = get_config_value(lines.begin(), lines.end(), "rpcuser");
+	v+= ':';
+	v += get_config_value(lines.begin(), lines.end(), "rpcpassword");
+
+	return v;
+}
+
+static void request(const btc_rpc &bd, const std::string &method, const json &params)
+{
+	json j = {
+		{"jsonrpc", "2.0"}, {"id", id()}, {"method", method}, {"params", params}};
+	WARN(j);
+
+	std::string s = j.dump();
+	struct curl_slist *headers = NULL;
 
 	headers = curl_slist_append(headers, "content-type: text/plain;");
-	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+	curl_assert(curl_easy_setopt(bd.c, CURLOPT_HTTPHEADER, headers));
 
-	curl_easy_setopt(curl, CURLOPT_URL, "http://127.0.0.1:18332/");
+	curl_assert(
+	    curl_easy_setopt(bd.c, CURLOPT_URL, "http://127.0.0.1:18332/"));
 
-	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long) strlen(data));
-	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
+	curl_assert(
+	    curl_easy_setopt(bd.c, CURLOPT_POSTFIELDSIZE, s.size()));
+	curl_assert(curl_easy_setopt(bd.c, CURLOPT_POSTFIELDS, s.data()));
 
-	curl_easy_setopt(curl, CURLOPT_USERPWD, "wythe:cbxGk7SVS2Ruz5L2");
+	curl_assert(
+	    curl_easy_setopt(bd.c, CURLOPT_USERPWD, userpass().c_str()));
+	curl_assert(curl_easy_setopt(bd.c, CURLOPT_USE_SSL, CURLUSESSL_TRY));
 
-	curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_TRY);
-
-	if (curl_easy_perform(curl) != CURLE_OK)
-		PANIC("curl fail");
-    }
+	curl_assert(curl_easy_perform(bd.c));
 }
 
-json getnetworkinfo()
+json getnetworkinfo(const btc_rpc &bd)
 {
-#if 1
-	curl_get();
-	return {{"method", "getnetworkinfo"}, {"id", "1"}, {"params", {nullptr}}};
-#else
-	std::string id = "bitcoin-cli-";
-	id += getpid();
-	json j = {
-	    {"method", "getnetworkinfo"}, {"id", id}, {"params", {nullptr}}};
-	return j;
-#endif
+	request(bd, "getnetworkinfo", json::array());
+	return "{}";
 }
 
+btc_rpc::~btc_rpc()
+{
+	curl_global_cleanup();
+}
 } // btc
-
 } // rpc

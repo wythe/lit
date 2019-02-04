@@ -4,19 +4,6 @@
 
 namespace rpc
 {
-uds_rpc::uds_rpc(const std::string & name)
-{ 
-	id = name + "-" + std::to_string(getpid());
-}
-
-uds_rpc::~uds_rpc()
-{
-	if (fd != -1) {
-		close(fd);
-		fd = -1;
-	}
-}
-
 static bool write_all(int fd, const void *data, size_t size)
 {
 	while (size) {
@@ -95,4 +82,5 @@ std::string error_message(const json &j)
 	if (has_error(j))
 		return j["error"]["message"];
 }
+
 }

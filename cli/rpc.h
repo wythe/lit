@@ -8,19 +8,38 @@
 #include <unistd.h>
 #include <wythe/exception.h>
 
+#define curl_assert(r) do {\
+if (r != CURLE_OK) \
+	PANIC("curl fail: " << curl_easy_strerror(r)); \
+} while(0); 
+
 using json = nlohmann::json;
 
 extern bool g_json_trace;
 
 namespace rpc
 {
+inline std::string id(void)
+{
+	static std::string id = "lit-" + std::to_string(getpid());
+	return id;
+}
 
 // unix domain socket json rpc
 struct uds_rpc {
-	uds_rpc(const std::string & prefix);
+	uds_rpc() {
+		id = rpc::id();
+	}
+	~uds_rpc()
+	{
+		if (fd != -1) {
+			close(fd);
+			fd = -1;
+		}
+	}
+
 	uds_rpc(const uds_rpc &) = delete;
 	uds_rpc &operator=(const uds_rpc &) = delete;
-	~uds_rpc();
 	std::string id;
 	int fd = -1;
 };

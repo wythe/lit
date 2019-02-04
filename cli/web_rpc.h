@@ -12,8 +12,6 @@ struct https {
 	https(const https &) = delete;
 	https &operator=(const https &) = delete;
 	~https();
-	static size_t write_callback(void *contents, size_t size, size_t n,
-				     std::string *s);
 	CURL *c;
 	std::string s;
 };
