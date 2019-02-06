@@ -50,7 +50,7 @@ int connect(std::string const &dir, std::string const &filename)
 json request_local(int fd, const json &req)
 {
 	trace(req);
-	std::string s = req.dump();
+	std::string s{req.dump()};
 	rpc::write_all(fd, s.data(), s.size());
 	auto j = read_all(fd);
 	trace(j);

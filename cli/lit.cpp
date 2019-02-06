@@ -58,7 +58,7 @@ double get_btcusd(rpc::web::https &https)
 	return v;
 }
 
-std::string to_dollars(rpc::web::https &https, const satoshi &s)
+std::string to_dollars(rpc::web::https &https, satoshi s)
 {
 	if (s == 0)
 		return "$0.00";
@@ -82,7 +82,6 @@ satoshi get_funds(rpc::uds_rpc &ld, rpc::web::https &https)
 	}
 	return total;
 }
-
 bool bech32 = true;
 
 void new_addr(opts &opts)
@@ -107,7 +106,8 @@ void list_nodes(struct opts &opts)
 
 void getnetworkinfo(struct opts &opts)
 {
-	std::cout << std::setw(4) << rpc::btc::getnetworkinfo(opts.bd);
+	std::cout << "getting network info:\n";
+	std::cout << std::setw(4) << rpc::btc::getnetworkinfo(opts.bd) << '\n';
 }
 
 void list_peers(struct opts &opts)
@@ -117,17 +117,21 @@ void list_peers(struct opts &opts)
 
 void getinfo(struct opts &opts)
 {
-	// show number of peers and nodes
-
 	auto peers = rpc::ln::peers(opts.ld);
 	auto nodes = rpc::ln::nodes(opts.ld);
 
-	WARN(nodes["result"]["nodes"].size() << " nodes");
-	WARN(peers["result"]["peers"].size() << " peers");
+	WARN(nodes["nodes"].size() << " nodes");
+	WARN(peers["peers"].size() << " peers");
+	WARN("block count is " << rpc::btc::getblockcount(opts.bd));
 
-	// get #confirms (i.e. age)
-	// bitcoin-cli getblockcount
-	// bitcoin-cli gettxout <tx_id> 1
+	for (auto &p : peers["peers"]) {
+		std::string txid = p["channels"][0]["funding_txid"];
+		WARN("txid is " << txid);
+		auto h = rpc::btc::getrawtransaction(opts.bd, txid);
+		WARN("height is " << h["confirmations"]);
+	}
+
+	WARN("bitcoin price is " << to_dollars(opts.https, 100000000));
 }
 
 #if 0

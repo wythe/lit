@@ -20,11 +20,13 @@ struct btc_rpc {
 	btc_rpc &operator=(const btc_rpc &) = delete;
 	~btc_rpc();
 	CURL *c;
-	std::string s;
 	std::string id;
 };
 
+json getblockcount(const btc_rpc &bd);
 json getnetworkinfo(const btc_rpc &bd);
+json gettxout(const btc_rpc &bd, const std::string &txid, int count);
+json getrawtransaction(const btc_rpc &bd, const std::string &txid);
 }
 
 }

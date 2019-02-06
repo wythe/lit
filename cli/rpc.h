@@ -21,7 +21,7 @@ namespace rpc
 {
 inline std::string id(void)
 {
-	static std::string id = "lit-" + std::to_string(getpid());
+	static std::string id{"lit-" + std::to_string(getpid())};
 	return id;
 }
 
