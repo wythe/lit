@@ -8,9 +8,12 @@
 #include "ln_rpc.h"
 #include "rpc.h"
 #include "web_rpc.h"
+#include "bc_rpc.h"
 
-using json = nlohmann::json;
 using satoshi = long long;
+using json = nlohmann::json;
+namespace ln = rpc::lightning;
+namespace bc = rpc::bitcoin;
 
 bool g_json_trace = false; // trace json commands
 
@@ -20,13 +23,14 @@ struct opts {
 	opts &operator=(const opts &) = delete;
 
 	bool show_price = false;
+	bool bech32 = true;
 	satoshi sats = 0;
 	std::string peer_id, peer_addr;
 	std::string rpc_dir, rpc_file;
 	std::string brpc_dir, brpc_file;
 	rpc::web::https https;
 	rpc::uds_rpc ld;
-	rpc::btc::btc_rpc bd;
+	bc::btc_rpc bd;
 };
 
 template <typename T> std::string dollars(T value)
@@ -82,11 +86,10 @@ satoshi get_funds(rpc::uds_rpc &ld, rpc::web::https &https)
 	}
 	return total;
 }
-bool bech32 = true;
 
 void new_addr(opts &opts)
 {
-	std::string type = bech32 ? "bech32" : "p2sh-segwit";
+	std::string type = opts.bech32 ? "bech32" : "p2sh-segwit";
 	json j = {
 	    {"method", "newaddr"}, {"id", opts.ld.id}, {"params", {type}}};
 	auto res = rpc::request_local(opts.ld.fd, j);
@@ -101,33 +104,35 @@ void list_funds(struct opts &opts)
 }
 void list_nodes(struct opts &opts)
 {
-	std::cout << std::setw(4) << rpc::ln::nodes(opts.ld);
+	std::cout << std::setw(4) << ln::nodes(opts.ld);
 }
 
 void getnetworkinfo(struct opts &opts)
 {
 	std::cout << "getting network info:\n";
-	std::cout << std::setw(4) << rpc::btc::getnetworkinfo(opts.bd) << '\n';
+	std::cout << std::setw(4) << bc::getnetworkinfo(opts.bd) << '\n';
 }
 
 void list_peers(struct opts &opts)
 {
-	std::cout << std::setw(4) << rpc::ln::peers(opts.ld);
+	std::cout << std::setw(4) << ln::peers(opts.ld);
+}
+
+json addressable(const json & nodes) {
 }
 
 void getinfo(struct opts &opts)
 {
-	auto peers = rpc::ln::peers(opts.ld);
-	auto nodes = rpc::ln::nodes(opts.ld);
-
+	auto peers = ln::peers(opts.ld);
+	auto nodes = ln::nodes(opts.ld);
 	WARN(nodes["nodes"].size() << " nodes");
 	WARN(peers["peers"].size() << " peers");
-	WARN("block count is " << rpc::btc::getblockcount(opts.bd));
+	WARN("block count is " << bc::getblockcount(opts.bd));
 
 	for (auto &p : peers["peers"]) {
 		std::string txid = p["channels"][0]["funding_txid"];
 		WARN("txid is " << txid);
-		auto h = rpc::btc::getrawtransaction(opts.bd, txid);
+		auto h = bc::getrawtransaction(opts.bd, txid);
 		WARN("height is " << h["confirmations"]);
 	}
 
@@ -195,7 +200,7 @@ wythe::cli::line<T> parse_opts(T &opts, int argc, char **argv)
 	line<T> line("0.0.1", "lit", "Lightning Stuff",
 		     "lit [options] [command] [command-options]");
 
-	add_opt(line, "ln-dir", 'L', "lightning rpc dir", rpc::ln::def_dir(),
+	add_opt(line, "ln-dir", 'L', "lightning rpc dir", ln::def_dir(),
 		[&](std::string const &d) { opts.rpc_dir = d; });
 
 	add_opt(line, "ln-rpc-file", 'f', "lightning rpc file", "lightning-rpc",
@@ -215,7 +220,7 @@ wythe::cli::line<T> parse_opts(T &opts, int argc, char **argv)
 		    "Request a new bitcoin address for use in funding channels",
 		    new_addr);
 	add_opt(*c, "p2sh", 'p', "Use p2sh-segwit address (default is bech32)",
-		[&] { bech32 = false; });
+		[&] { opts.bech32 = false; });
 
 	add_cmd(line, "getinfo", "Display summary information on channels",
 		getinfo);
@@ -233,11 +238,11 @@ int main(int argc, char **argv)
 		opts.ld.fd = rpc::connect(opts.rpc_dir, opts.rpc_file);
 		line.go(opts);
 
-		// if (!line.targets.empty()) PANIC("unrecognize command line
-		// argument: " << line.targets[0]);
+		if (!line.targets.empty())
+			PANIC("unrecognized command: " << line.targets[0]);
 	} catch (std::invalid_argument &e) {
-		std::cerr << "invalid argument: " << e.what() << std::endl;
+		std::cerr << "invalid argument: " << e.what() << '\n';
 	} catch (std::exception &e) {
-		WARN(e.what());
+		std::cerr << e.what() << '\n';
 	}
 }

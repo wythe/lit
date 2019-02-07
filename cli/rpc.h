@@ -19,6 +19,7 @@ extern bool g_json_trace;
 
 namespace rpc
 {
+
 inline std::string id(void)
 {
 	static std::string id{"lit-" + std::to_string(getpid())};
@@ -44,18 +45,22 @@ struct uds_rpc {
 	int fd = -1;
 };
 
-void trace(const json &j);
+template <typename T>
+void trace(T &j)
+{
+	if (g_json_trace)
+		std::cerr << std::setw(4) << j << '\n';
+}
+
 std::string def_dir();
 std::string name();
 
 json request_local(int fd, const json &req);
 
-json read_all(int fd);
-
 bool has_error(const json &j);
 
 std::string error_message(const json &j);
 
-int connect(std::string const &dir, std::string const &filename);
+int connect(std::string_view dir, std::string_view filename);
 
 } // rpc

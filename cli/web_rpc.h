@@ -16,6 +16,6 @@ struct https {
 	std::string s;
 };
 
-json request(https &h, const std::string url);
+json request(https &h, std::string_view url);
 }
 }
