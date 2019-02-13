@@ -20,33 +20,6 @@ static size_t write_callback(void *contents, size_t size, size_t n,
 	return bytes;
 }
 
-btc_rpc::btc_rpc()
-{
-	curl_assert(curl_global_init(CURL_GLOBAL_DEFAULT));
-	c = curl_easy_init();
-	if (!c)
-		PANIC("curl init error");
-	curl_assert(curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, write_callback));
-}
-
-btc_rpc::~btc_rpc()
-{
-	curl_global_cleanup();
-}
-
-std::string def_dir()
-{
-	std::string path;
-
-	const char *env{getenv("HOME")};
-	if (!env)
-		PANIC("HOME environment undefined");
-
-	path = env;
-	path += "/.bitcoin";
-	return path;
-}
-
 /*
  * Do this in lieu of a proper config file loader.
  */
@@ -64,7 +37,20 @@ static std::string get_config_value(auto first, auto last, string_view key)
 	return l[1];
 }
 
-std::string userpass()
+static std::string def_dir()
+{
+	std::string path;
+
+	const char *env{getenv("HOME")};
+	if (!env)
+		PANIC("HOME environment undefined");
+
+	path = env;
+	path += "/.bitcoin";
+	return path;
+}
+
+static std::string userpass()
 {
 	auto fn{def_dir() + "/bitcoin.conf"};
 	auto file{wythe::read_file(fn)};
@@ -76,30 +62,41 @@ std::string userpass()
 	return v;
 }
 
-static json request(const btc_rpc &bd, string_view method,
-		    const json &params)
+bd::bd()
+{
+	curl_assert(curl_global_init(CURL_GLOBAL_DEFAULT));
+	c = curl_easy_init();
+	if (!c)
+		PANIC("curl init error");
+	curl_assert(curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, write_callback));
+	struct curl_slist *headers = NULL;
+	headers = curl_slist_append(headers, "content-type: text/plain;");
+	curl_assert(curl_easy_setopt(c, CURLOPT_HTTPHEADER, headers));
+	curl_assert(
+	    curl_easy_setopt(c, CURLOPT_URL, "http://127.0.0.1:18332/"));
+	curl_assert(
+	    curl_easy_setopt(c, CURLOPT_USERPWD, userpass().c_str()));
+	curl_assert(curl_easy_setopt(c, CURLOPT_USE_SSL, CURLUSESSL_TRY));
+}
+
+bd::~bd()
+{
+	curl_global_cleanup();
+}
+
+static json request(const bd &bd, string_view method, const json &params)
 {
 	std::string raw;
-	json j {{"jsonrpc", "2.0"},
-		  {"id", id()},
-		  {"method", std::string(method)},
-		  {"params", params}};
+	json j{{"jsonrpc", "2.0"},
+	       {"id", id()},
+	       {"method", std::string(method)},
+	       {"params", params}};
 
 	std::string s{j.dump()};
-	struct curl_slist *headers = NULL;
-
-	headers = curl_slist_append(headers, "content-type: text/plain;");
-	curl_assert(curl_easy_setopt(bd.c, CURLOPT_HTTPHEADER, headers));
-
-	curl_assert(
-	    curl_easy_setopt(bd.c, CURLOPT_URL, "http://127.0.0.1:18332/"));
 
 	curl_assert(curl_easy_setopt(bd.c, CURLOPT_POSTFIELDSIZE, s.size()));
 	curl_assert(curl_easy_setopt(bd.c, CURLOPT_POSTFIELDS, s.data()));
 
-	curl_assert(
-	    curl_easy_setopt(bd.c, CURLOPT_USERPWD, userpass().c_str()));
-	curl_assert(curl_easy_setopt(bd.c, CURLOPT_USE_SSL, CURLUSESSL_TRY));
 	curl_assert(curl_easy_setopt(bd.c, CURLOPT_WRITEDATA, &raw));
 	curl_assert(curl_easy_perform(bd.c));
 	auto r = json::parse(raw);
@@ -112,33 +109,38 @@ static json request(const btc_rpc &bd, string_view method,
 		PANIC("no error found in bitcoind response\n"
 		      << std::setw(4) << r);
 
-	auto res = r["result"];
-	if (res == nullptr)
+	if (r.count("result") == 0)
 		PANIC("no result found in bitcoind response\n"
 		      << std::setw(4) << r);
-	return res;
+	return r["result"];
 }
 
-json getnetworkinfo(const btc_rpc &bd)
+json getnetworkinfo(const bd &bd)
 {
 	return request(bd, "getnetworkinfo", json::array());
 }
 
-json getblockcount(const btc_rpc &bd)
+json getblockcount(const bd &bd)
 {
 	return request(bd, "getblockcount", json::array());
 }
 
-json gettxout(const btc_rpc &bd, string_view txid, int count)
+json gettxout(const bd &bd, string_view txid, int count)
 {
 	json j{std::string{txid}, count};
 	return request(bd, "gettxout", j);
 }
 
-json getrawtransaction(const btc_rpc &bd, string_view txid)
+json getrawtransaction(const bd &bd, string_view txid)
 {
 	json j{std::string{txid}, 1};
 	return request(bd, "getrawtransaction", j);
+}
+
+int confirmations(const bd &bd, string_view txid)
+{
+	auto h = getrawtransaction(bd, txid);
+	return h.at("confirmations").get<int>();
 }
 
 } // bitcoin

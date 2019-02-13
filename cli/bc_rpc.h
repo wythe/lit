@@ -2,21 +2,23 @@
 #include "rpc.h"
 namespace rpc {
 namespace bitcoin {
-std::string def_dir();
-std::string userpass();
-
-struct btc_rpc {
-	btc_rpc();
-	btc_rpc(const btc_rpc &) = delete;
-	btc_rpc &operator=(const btc_rpc &) = delete;
-	~btc_rpc();
+// bitcoin daemon
+struct bd {
+	bd();
+	bd(const bd &) = delete;
+	bd &operator=(const bd &) = delete;
+	~bd();
 	CURL *c;
 	std::string id;
 };
 
-json getblockcount(const btc_rpc &bd);
-json getnetworkinfo(const btc_rpc &bd);
-json gettxout(const btc_rpc &bd, const std::string &txid, int count);
-json getrawtransaction(const btc_rpc &bd, std::string_view txid);
+// rpc commands
+json getblockcount(const bd &bd);
+json getnetworkinfo(const bd &bd);
+json gettxout(const bd &bd, std::string_view txid, int count);
+json getrawtransaction(const bd &bd, std::string_view txid);
+
+// convenience functions
+int confirmations(const bd &bd, std::string_view txid);
 }
 }

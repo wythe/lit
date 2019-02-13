@@ -3,10 +3,10 @@
 
 #include <algorithm>
 #include <functional>
-#include <vector>
-#include <string>
-#include <map>
 #include <iostream>
+#include <map>
+#include <string>
+#include <vector>
 
 /*
  * Command lines are of the form:
@@ -18,8 +18,7 @@ namespace wythe
 namespace cli
 {
 
-struct option
-{
+struct option {
       public:
 	option(const std::string name, char short_opt, const std::string desc,
 	       std::function<void()> action = []() {})
@@ -61,8 +60,7 @@ template <typename Opts> struct command {
 	std::vector<option> opts;
 };
 
-template <typename Opts> struct line
-{
+template <typename Opts> struct line {
 	line(const std::string &version, const std::string &name,
 	     const std::string &desc, const std::string &usage)
 	    : version_no(version), name(name), desc(desc), usage(usage)
@@ -148,14 +146,11 @@ template <typename Opts> struct line
 	command<Opts> cmd;
 };
 
-template <typename T>
-inline void help(T &line) { line.help(); }
+template <typename T> inline void help(T &line) { line.help(); }
 
-template <typename T>
-inline void version(T &line) { line.version(); }
+template <typename T> inline void version(T &line) { line.version(); }
 
-template <typename T>
-inline void parse(T &line, int argc, char **argv)
+template <typename T> inline void parse(T &line, int argc, char **argv)
 {
 	enum State {
 		Idle,
@@ -397,7 +392,8 @@ inline void parse(T &line, int argc, char **argv)
 				    line.commands.begin(), line.commands.end(),
 				    [&](auto &c) { return c.name == target; });
 				if (it ==
-				    line.commands.end()) { // not in command list
+				    line.commands
+					.end()) { // not in command list
 					line.targets.push_back(target);
 					target.clear();
 					state = LookingForTarget;
@@ -444,7 +440,6 @@ inline void parse(T &line, int argc, char **argv)
 	}
 }
 
-
 template <typename T, typename... Args>
 void add_opt(line<T> &line, Args &&... args)
 {
@@ -464,9 +459,11 @@ void add_cmd(line<T> &line, Args &&... args)
 }
 
 template <typename T, typename... Args>
-typename std::vector<command<T>>::iterator emp_cmd(line<T> &line, Args &&... args)
+typename std::vector<command<T>>::iterator emp_cmd(line<T> &line,
+						   Args &&... args)
 {
-	return line.commands.emplace(line.commands.end(), std::forward<Args>(args)...);
+	return line.commands.emplace(line.commands.end(),
+				     std::forward<Args>(args)...);
 }
 }
 }

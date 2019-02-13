@@ -13,9 +13,10 @@ struct https {
 	https &operator=(const https &) = delete;
 	~https();
 	CURL *c;
-	std::string s;
 };
 
 json request(https &h, std::string_view url);
+
+json priceinfo(const https &https);
 }
 }

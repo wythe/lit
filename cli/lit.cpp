@@ -5,10 +5,7 @@
 #include <wythe/command.h>
 #include <wythe/exception.h>
 
-#include "ln_rpc.h"
-#include "rpc.h"
-#include "web_rpc.h"
-#include "bc_rpc.h"
+#include "rpc_hosts.h"
 
 using satoshi = long long;
 using json = nlohmann::json;
@@ -28,12 +25,12 @@ struct opts {
 	std::string peer_id, peer_addr;
 	std::string rpc_dir, rpc_file;
 	std::string brpc_dir, brpc_file;
-	rpc::web::https https;
-	rpc::uds_rpc ld;
-	bc::btc_rpc bd;
+
+	// FIXME Just make this a global?
+	rpc::hosts rpc;
 };
 
-template <typename T> std::string dollars(T value)
+static std::string dollars(satoshi value)
 {
 	std::stringstream ss;
 	ss.imbue(std::locale(""));
@@ -41,7 +38,7 @@ template <typename T> std::string dollars(T value)
 	return ss.str();
 }
 
-double get_btcusd(rpc::web::https &https)
+static double get_btcusd(rpc::web::https &https)
 {
 	static double v = -1;
 	// Timer used here to cache last values for 5 seconds between calls.
@@ -53,16 +50,14 @@ double get_btcusd(rpc::web::https &https)
 	    std::chrono::duration_cast<std::chrono::seconds>(now - last_time)
 		.count();
 	if (v < 0 || secs > 5) {
-		auto j = rpc::web::request(
-		    https, "https://api.gemini.com/v1/pubticker/btcusd");
-
+		auto j = rpc::web::priceinfo(https);
 		auto last = j.at("last").get<std::string>();
 		v = std::stod(last);
 	}
 	return v;
 }
 
-std::string to_dollars(rpc::web::https &https, satoshi s)
+static std::string to_dollars(rpc::web::https &https, satoshi s)
 {
 	if (s == 0)
 		return "$0.00";
@@ -71,17 +66,15 @@ std::string to_dollars(rpc::web::https &https, satoshi s)
 	return dollars(price * btc);
 }
 
-satoshi get_funds(rpc::uds_rpc &ld, rpc::web::https &https)
+static satoshi get_funds(ln::ld &ld)
 {
-	json j = {
-	    {"method", "listfunds"}, {"id", ld.id}, {"params", json::array()}};
+	auto res = ln::listfunds(ld);
 
-	auto res = rpc::request_local(ld.fd, j);
-	auto outputs = res["result"]["outputs"];
+	auto outputs = res["outputs"];
 	if (outputs.size() == 0)
 		return 0;
 	satoshi total = 0;
-	for (auto &j : res["result"]["outputs"]) {
+	for (auto &j : res["outputs"]) {
 		total += j["value"].get<long long>();
 	}
 	return total;
@@ -89,33 +82,31 @@ satoshi get_funds(rpc::uds_rpc &ld, rpc::web::https &https)
 
 void new_addr(opts &opts)
 {
-	std::string type = opts.bech32 ? "bech32" : "p2sh-segwit";
-	json j = {
-	    {"method", "newaddr"}, {"id", opts.ld.id}, {"params", {type}}};
-	auto res = rpc::request_local(opts.ld.fd, j);
-	std::cout << res["result"]["address"] << '\n';
+	auto res = ln::newaddr(opts.rpc.ld, opts.bech32);
+	std::cout << res["address"].get<std::string>() << '\n';
 }
 
 void list_funds(struct opts &opts)
 {
 	std::cout << std::setw(4)
-		  << to_dollars(opts.https, get_funds(opts.ld, opts.https))
+		  << to_dollars(opts.rpc.https, get_funds(opts.rpc.ld))
 		  << '\n';
 }
+
 void list_nodes(struct opts &opts)
 {
-	std::cout << std::setw(4) << ln::nodes(opts.ld);
+	std::cout << std::setw(4) << ln::listnodes(opts.rpc.ld);
 }
 
 void getnetworkinfo(struct opts &opts)
 {
 	std::cout << "getting network info:\n";
-	std::cout << std::setw(4) << bc::getnetworkinfo(opts.bd) << '\n';
+	std::cout << std::setw(4) << bc::getnetworkinfo(opts.rpc.bd) << '\n';
 }
 
 void list_peers(struct opts &opts)
 {
-	std::cout << std::setw(4) << ln::peers(opts.ld);
+	std::cout << std::setw(4) << ln::listpeers(opts.rpc.ld);
 }
 
 json addressable(const json & nodes) {
@@ -123,75 +114,24 @@ json addressable(const json & nodes) {
 
 void getinfo(struct opts &opts)
 {
-	auto peers = ln::peers(opts.ld);
-	auto nodes = ln::nodes(opts.ld);
+	auto peers = ln::listpeers(opts.rpc.ld);
+	auto nodes = ln::listnodes(opts.rpc.ld);
 	WARN(nodes["nodes"].size() << " nodes");
 	WARN(peers["peers"].size() << " peers");
-	WARN("block count is " << bc::getblockcount(opts.bd));
-
+	WARN("block count is " << bc::getblockcount(opts.rpc.bd));
+#if 1
 	for (auto &p : peers["peers"]) {
 		std::string txid = p["channels"][0]["funding_txid"];
 		WARN("txid is " << txid);
-		auto h = bc::getrawtransaction(opts.bd, txid);
+		auto h = bc::getrawtransaction(opts.rpc.bd, txid);
 		WARN("height is " << h["confirmations"]);
 	}
-
-	WARN("bitcoin price is " << to_dollars(opts.https, 100000000));
-}
-
-#if 0
-json connect(const std::string &peer_id, const std::string &peer_addr)
-{
-	auto id = peer_id;
-	if (!peer_addr.empty()) {
-		id += '@';
-		id += peer_addr;
-	}
-	json req = {{"method", "connect"}, {"id", name}, {"params", {id}}};
-	auto j = rpc::request_local(req);
-	auto m = rpc::error_message(j);
-	if (!m.empty())
-		PANIC(m);
-	return j;
-}
-
-bool fund_channel(const std::string &id, satoshi amount)
-{
-	json req = {
-	    {"method", "fundchannel"}, {"id", name}, {"params", {id, amount}}};
-	auto j = rpc::request_local(req);
-	auto m = rpc::error_message(j);
-	if (!m.empty())
-		PANIC(m);
-	return j;
-}
-
-void fund_first(satoshi sats)
-{
-	std::cout << "funding first available compatible node with " << sats
-		  << " satoshis (" << to_dollars(sats) << ").\n";
-	auto nodes = list_nodes();
-	// WARN(nodes);
-	for (auto &n : nodes["result"]["nodes"]) {
-		// std::cout << n["alias"] << '\n';
-		for (auto &a : n["addresses"]) {
-			if (a.size()) { // TODO This check is because one of the
-					// values was set to {}. Problem with
-					// lightningd?
-				std::string id = n["nodeid"];
-				std::string ip = a["address"];
-				std::string addr = ip;
-				addr += ':';
-				addr += std::to_string(a["port"].get<int>());
-				std::cout << "trying " << id << " " << addr
-					  << '\n';
-				// connect(id, addr);
-				// return;
-			}
-		}
-	}
-}
 #endif
+	WARN("bitcoin price is " << to_dollars(opts.rpc.https, 100000000));
+#if 0
+	WARN("total funds: " << to_dollars(opts.https, get_funds(opts.ld)));
+#endif
+}
 
 template <typename T>
 wythe::cli::line<T> parse_opts(T &opts, int argc, char **argv)
@@ -212,7 +152,8 @@ wythe::cli::line<T> parse_opts(T &opts, int argc, char **argv)
 	add_cmd(line, "listfunds", "Show funds available for opening channels",
 		list_funds);
 	add_cmd(line, "listnodes", "List all the nodes we see", list_nodes);
-	add_cmd(line, "getnetworkinfo", "Show bitcoin network inf", getnetworkinfo);
+	add_cmd(line, "getnetworkinfo", "Show bitcoin network inf",
+		getnetworkinfo);
 
 	add_cmd(line, "listpeers", "List our peers", list_peers);
 	auto c =
@@ -235,7 +176,7 @@ int main(int argc, char **argv)
 	try {
 		opts opts;
 		auto line = parse_opts(opts, argc, argv);
-		opts.ld.fd = rpc::connect(opts.rpc_dir, opts.rpc_file);
+		opts.rpc.ld.fd = ln::connect_uds(opts.rpc_dir, opts.rpc_file);
 		line.go(opts);
 
 		if (!line.targets.empty())
