@@ -2,6 +2,7 @@
 #include "rpc.h"
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
+#include "node.h"
 
 namespace rpc
 {
@@ -18,5 +19,7 @@ struct https {
 json request(https &h, std::string_view url);
 
 json priceinfo(const https &https);
+
+node_list get_1ML_connected(const https &https);
 }
 }

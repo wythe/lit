@@ -6,6 +6,7 @@
 #include <wythe/exception.h>
 
 #include "rpc_hosts.h"
+#include "node.h"
 
 using satoshi = long long;
 using json = nlohmann::json;
@@ -109,28 +110,37 @@ void list_peers(struct opts &opts)
 	std::cout << std::setw(4) << ln::listpeers(opts.rpc.ld);
 }
 
-json addressable(const json & nodes) {
-}
-
 void getinfo(struct opts &opts)
 {
 	auto peers = ln::listpeers(opts.rpc.ld);
-	auto nodes = ln::listnodes(opts.rpc.ld);
-	WARN(nodes["nodes"].size() << " nodes");
+	auto nodes = ln::get_nodes(opts.rpc.ld);
+	WARN(nodes.size() << " nodes");
 	WARN(peers["peers"].size() << " peers");
-	WARN("block count is " << bc::getblockcount(opts.rpc.bd));
-#if 1
+	auto channel_list = unmarshal_channel_list(opts.rpc, peers);
+
 	for (auto &p : peers["peers"]) {
 		std::string txid = p["channels"][0]["funding_txid"];
 		WARN("txid is " << txid);
 		auto h = bc::getrawtransaction(opts.rpc.bd, txid);
 		WARN("height is " << h["confirmations"]);
 	}
-#endif
+
+	for (auto &ch : channel_list) {
+		WARN("id is " << ch.peer.nodeid);
+		WARN("state is " << ch.state);
+		WARN("confirmations is " << ch.confirmations);
+	}
+
+	WARN("block count is " << bc::getblockcount(opts.rpc.bd));
 	WARN("bitcoin price is " << to_dollars(opts.rpc.https, 100000000));
-#if 0
-	WARN("total funds: " << to_dollars(opts.https, get_funds(opts.ld)));
-#endif
+	WARN("total funds: " << to_dollars(opts.rpc.https, get_funds(opts.rpc.ld)));
+}
+
+void autopilot(struct opts &opts)
+{
+	auto channels = unmarshal_channel_list(opts.rpc, ln::listpeers(opts.rpc.ld));
+	auto nodes = unmarshal_node_list(ln::listnodes(opts.rpc.ld));
+	autopilot(opts.rpc, channels, nodes);
 }
 
 template <typename T>
@@ -147,13 +157,13 @@ wythe::cli::line<T> parse_opts(T &opts, int argc, char **argv)
 		[&](std::string const &f) { opts.rpc_file = f; });
 
 	add_opt(line, "trace", 't', "Display rpc json request and response",
-		[&] { g_json_trace = true; });
+		[&]{ g_json_trace = true; });
 
 	add_cmd(line, "listfunds", "Show funds available for opening channels",
 		list_funds);
 	add_cmd(line, "listnodes", "List all the nodes we see", list_nodes);
-	add_cmd(line, "getnetworkinfo", "Show bitcoin network inf",
-		getnetworkinfo);
+	add_cmd(line, "getnetworkinfo",
+		"Show bitcoin and lightningnetwork info.", getnetworkinfo);
 
 	add_cmd(line, "listpeers", "List our peers", list_peers);
 	auto c =
@@ -161,7 +171,7 @@ wythe::cli::line<T> parse_opts(T &opts, int argc, char **argv)
 		    "Request a new bitcoin address for use in funding channels",
 		    new_addr);
 	add_opt(*c, "p2sh", 'p', "Use p2sh-segwit address (default is bech32)",
-		[&] { opts.bech32 = false; });
+		[&]{ opts.bech32 = false; });
 
 	add_cmd(line, "getinfo", "Display summary information on channels",
 		getinfo);

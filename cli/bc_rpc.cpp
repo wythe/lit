@@ -87,8 +87,8 @@ bd::~bd()
 static json request(const bd &bd, string_view method, const json &params)
 {
 	std::string raw;
-	json j{{"jsonrpc", "2.0"},
-	       {"id", id()},
+	json j{{"jsonrpc", "1.0"},
+	       {"id", name()},
 	       {"method", std::string(method)},
 	       {"params", params}};
 
@@ -101,18 +101,11 @@ static json request(const bd &bd, string_view method, const json &params)
 	curl_assert(curl_easy_perform(bd.c));
 	auto r = json::parse(raw);
 	trace(r);
-	auto err{r.find("error")};
-	if (err != r.end()) {
-		if (*err != nullptr)
-			PANIC(method << " error: " << std::setw(4) << r);
-	} else
-		PANIC("no error found in bitcoind response\n"
-		      << std::setw(4) << r);
 
-	if (r.count("result") == 0)
-		PANIC("no result found in bitcoind response\n"
-		      << std::setw(4) << r);
-	return r["result"];
+	auto err = r.at("error");
+	if (err != nullptr)
+		PANIC(method << " error: " << std::setw(4) << r);
+	return r.at("result");
 }
 
 json getnetworkinfo(const bd &bd)

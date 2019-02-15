@@ -1,6 +1,7 @@
 #include "ln_rpc.h"
 #include <wythe/common.h>
 #include <string_view>
+#include "node.h"
 
 using string_view = std::string_view;
 namespace rpc
@@ -63,16 +64,22 @@ int connect_uds(string_view dir, string_view filename)
 	return fd;
 }
 
-static json request(int fd, const json &req)
+static json request(const ld &ld, string_view method, const json &params)
 {
-	trace(req);
-	std::string s{req.dump()};
-	write_all(fd, s.data(), s.size());
-	auto j = read_all(fd);
+	std::string raw;
+	json j{{"jsonrpc", "2.0"},
+	       {"id", name()},
+	       {"method", std::string(method)},
+	       {"params", params}};
+
 	trace(j);
-	if (j.count("error"))
-		PANIC(j["error"]);
-	return j;
+	std::string s{j.dump()};
+	write_all(ld.fd, s.data(), s.size());
+	auto r = read_all(ld.fd);
+	trace(r);
+	if (r.count("error"))
+		PANIC(r.at("error"));
+	return r.at("result");
 }
 
 std::string def_dir()
@@ -90,39 +97,23 @@ std::string def_dir()
 
 json listpeers(const ld &ld)
 {
-	json j{{"id", id()},
-	       {"jsonrpc", "2.0"},
-	       {"method", "listpeers"},
-	       {"params", {nullptr}}};
-	return request(ld.fd, j)["result"];
+	return request(ld, "listpeers", json::array());
 }
 
-json listnodes(const ld &ld)
+json listnodes(const ld &ld, const std::string& id)
 {
-	json j{{"id", id()},
-	       {"jsonrpc", "2.0"},
-	       {"method", "listnodes"},
-	       {"params", {nullptr}}};
-	return request(ld.fd, j)["result"];
+	return request(ld, "listnodes", id.empty() ? json::array() : json{ id });
 }
 
 json listfunds(const ld &ld)
 {
-	json j{{"id", ld.id},
-	       {"jsonrpc", "2.0"},
-	       {"method", "listfunds"},
-	       {"params", json::array()}};
-	return request(ld.fd, j)["result"];
+	return request(ld, "listfunds", json::array());
 }
 
 json newaddr(const ld &ld, bool bech32)
 {
 	std::string type = bech32 ? "bech32" : "p2sh-segwit";
-	json j{{"id", ld.id},
-	       {"jsonrpc", "2.0"},
-	       {"method", "newaddr"},
-	       {"params", {type}}};
-	return request(ld.fd, j)["result"];
+	return request(ld, "newaddr", {type});
 }
 
 json connect(const ld &ld, string_view peer_id, string_view peer_addr)
@@ -132,20 +123,36 @@ json connect(const ld &ld, string_view peer_id, string_view peer_addr)
 		addr += '@';
 		addr += peer_addr;
 	}
-	json req{{"id", ld.id},
-		 {"jsonrpc", "2.0"},
-		 {"method", "connect"},
-		 {"params", {addr}}};
-	return request(ld.fd, req);
+	return request(ld, "connect", {addr});
 }
 
-bool fundchannel(const ld &ld, const std::string &id, uint64_t amount)
+json fundchannel(const ld &ld, const std::string &id, uint64_t amount)
 {
-	json req{{"id", ld.id},
-		 {"jsonrpc", "2.0"},
-		 {"method", "fundchannel"},
-		 {"params", {id, amount}}};
-	return request(ld.fd, req);
+	return request(ld, "fundchannel", {id, amount});
 }
+
+node unmarshal_node(const json &j)
+{
+	node n;
+	n.nodeid = j.at("nodeid").get<std::string>();
+	n.alias = j.at("alias").get<std::string>();
+	n.address = j.at("addresses").at(0).at("address").get<std::string>();
+	n.address += ":";
+	n.address += j.at("addresses").at(0).at("port").get<int>();
+	return n;
+}
+
+node_list get_nodes(const ld &ld)
+{
+	auto j = listnodes(ld);
+	node_list nodes;
+	for (auto &jn : j.at("nodes")) {
+		// ignore if we can't address it
+		if (jn.count("addresses") && jn.at("addresses").size() > 0)
+			nodes.emplace_back(unmarshal_node(jn));
+	}
+	return nodes;
+}
+
 } // lightning
 } // rpc

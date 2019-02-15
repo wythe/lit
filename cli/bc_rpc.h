@@ -1,7 +1,9 @@
 #pragma once
 #include "rpc.h"
-namespace rpc {
-namespace bitcoin {
+namespace rpc
+{
+namespace bitcoin
+{
 // bitcoin daemon
 struct bd {
 	bd();
@@ -9,10 +11,9 @@ struct bd {
 	bd &operator=(const bd &) = delete;
 	~bd();
 	CURL *c;
-	std::string id;
 };
 
-// rpc commands
+// bitcoind rpc commands
 json getblockcount(const bd &bd);
 json getnetworkinfo(const bd &bd);
 json gettxout(const bd &bd, std::string_view txid, int count);

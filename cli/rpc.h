@@ -20,7 +20,8 @@ extern bool g_json_trace;
 namespace rpc
 {
 
-inline std::string id()
+// the unique name of the program, used as id for json.
+inline std::string name()
 {
 	static std::string id{"lit-" + std::to_string(getpid())};
 	return id;

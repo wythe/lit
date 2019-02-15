@@ -52,6 +52,23 @@ json priceinfo(const https &https)
 {
 	return request(https, "https://api.gemini.com/v1/pubticker/btcusd");
 }
-}
-}
 
+node_list get_1ML_connected(const https &https)
+{
+	node_list nodes;
+	auto j =
+	    request(https, "https://1ml.com/testnet/"
+			   "node?order=channelcount&active=true&public=true&"
+			   "json=true");
+	for (auto &n : j) {
+		node node{
+		    n.at("pubkey").get<std::string>(),
+		    n.at("alias").get<std::string>(),
+		    n.at("addresses").at(0).at("addr").get<std::string>()};
+
+		nodes.emplace_back(node);
+	}
+	return nodes;
+}
+}
+}

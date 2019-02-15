@@ -1,25 +1,21 @@
 #include "node.h"
+#include "rpc_hosts.h"
+#include <random>
 
-node unmarshal_node(const json &j)
-{ 
-	node n;
-	n.nodeid = j.at("nodeid");
-	n.alias = j.at("alias");
-	n.address = j["addresses"][0]["address"];
-	n.address += ":";
-	n.address += j["addresses"][0]["port"].get<int>();
-	return n;
-}
+namespace ln = rpc::lightning;
+namespace bc = rpc::bitcoin;
 
-node unmarshal_peer(const json &peer)
+channel unmarshal_channel(const rpc::hosts &hosts, const json &peer)
 {
-#if 1
-	return node();
-#else
-	auto p = j.at("id").get<std::string>();
-	auto n = unmarshal_node(ln::listnodes(p.nodeid));
-#endif
-
+	auto id = peer.at("id").get<std::string>();
+	auto a = ln::listnodes(hosts.ld, id).at("nodes").at(0);
+	// WARN(a);
+	channel ch;
+	ch.peer = ln::unmarshal_node(a);
+	ch.confirmations = bc::confirmations(
+	    hosts.bd,
+	    peer.at("channels").at(0).at("funding_txid").get<std::string>());
+	return ch;
 }
 
 node_list unmarshal_node_list(const json &j)
@@ -28,14 +24,40 @@ node_list unmarshal_node_list(const json &j)
 	for (auto &n : j.at("nodes"))
 		// ignore if we can't address it
 		if (n["addresses"] > 0)
-			nodes.emplace_back(unmarshal_node(n));
+			nodes.emplace_back(ln::unmarshal_node(n));
 	return nodes;
 }
 
-node_list unmarshal_peer_list(const json &j)
+channel_list unmarshal_channel_list(const rpc::hosts &hosts, const json &peers)
 {
-	node_list peers;
-	for (auto &p : j.at("peers"))
-		peers.emplace_back(unmarshal_peer(p));
-	return peers;
+	channel_list channels;
+	for (auto &p : peers.at("peers"))
+		channels.emplace_back(unmarshal_channel(hosts, p));
+	return channels;
+}
+
+node_list get_nodes(const rpc::hosts &hosts)
+{
+	auto nodes = ln::get_nodes(hosts.ld);
+	node_list ml_nodes;
+	if (nodes.size() < 200)
+		ml_nodes = rpc::web::get_1ML_connected(hosts.https);
+
+	nodes.insert(nodes.end(), ml_nodes.begin(), ml_nodes.end());
+}
+
+int connect_n(const rpc::hosts &hosts, const channel_list &channels,
+	      const node_list &nodes, int n)
+{
+	return 0;
+}
+
+void fund_all(const rpc::hosts &hosts, const channel_list &channels,
+	      const node_list &nodes, int n)
+{
+}
+
+void autopilot(const rpc::hosts &hosts, const channel_list &channels,
+	       const node_list &nodes)
+{
 }
