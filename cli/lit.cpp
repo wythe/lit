@@ -114,16 +114,11 @@ void getinfo(struct opts &opts)
 {
 	auto peers = ln::listpeers(opts.rpc.ld);
 	auto nodes = ln::get_nodes(opts.rpc.ld);
-	WARN(nodes.size() << " nodes");
+	auto mlnodes = rpc::web::get_1ML_connected(opts.rpc.https);
+	WARN(nodes.size() << " addressable nodes in network");
+	WARN(mlnodes.size() << " 1ML nodes");
 	WARN(peers["peers"].size() << " peers");
 	auto channel_list = unmarshal_channel_list(opts.rpc, peers);
-
-	for (auto &p : peers["peers"]) {
-		std::string txid = p["channels"][0]["funding_txid"];
-		WARN("txid is " << txid);
-		auto h = bc::getrawtransaction(opts.rpc.bd, txid);
-		WARN("height is " << h["confirmations"]);
-	}
 
 	for (auto &ch : channel_list) {
 		WARN("id is " << ch.peer.nodeid);
@@ -139,7 +134,7 @@ void getinfo(struct opts &opts)
 void autopilot(struct opts &opts)
 {
 	auto channels = unmarshal_channel_list(opts.rpc, ln::listpeers(opts.rpc.ld));
-	auto nodes = unmarshal_node_list(ln::listnodes(opts.rpc.ld));
+	auto nodes = get_nodes(opts.rpc.ld);
 	autopilot(opts.rpc, channels, nodes);
 }
 
@@ -157,7 +152,7 @@ wythe::cli::line<T> parse_opts(T &opts, int argc, char **argv)
 		[&](std::string const &f) { opts.rpc_file = f; });
 
 	add_opt(line, "trace", 't', "Display rpc json request and response",
-		[&]{ g_json_trace = true; });
+		[&] { g_json_trace = true; });
 
 	add_cmd(line, "listfunds", "Show funds available for opening channels",
 		list_funds);
@@ -171,7 +166,7 @@ wythe::cli::line<T> parse_opts(T &opts, int argc, char **argv)
 		    "Request a new bitcoin address for use in funding channels",
 		    new_addr);
 	add_opt(*c, "p2sh", 'p', "Use p2sh-segwit address (default is bech32)",
-		[&]{ opts.bech32 = false; });
+		[&] { opts.bech32 = false; });
 
 	add_cmd(line, "getinfo", "Display summary information on channels",
 		getinfo);

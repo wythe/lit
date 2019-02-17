@@ -1,6 +1,6 @@
 #pragma once
+#include <vector>
 #include "rpc.h"
-#include "node.h"
 
 namespace rpc
 {
@@ -23,11 +23,27 @@ struct ld {
 	int fd = -1;
 };
 
+struct node {
+	std::string nodeid;
+	std::string alias;
+	std::string address;
+	friend bool operator<(const node &a, const node &b)
+	{
+		return a.nodeid < b.nodeid;
+	}
+	friend bool operator==(const node &a, const node &b)
+	{
+		return a.nodeid == b.nodeid;
+	}
+};
+
+using node_list = std::vector<node>;
+
 // control
 std::string def_dir();
 int connect_uds(std::string_view dir, std::string_view filename);
 
-// lightningd rpc commands
+// lightningd json rpc commands
 json listpeers(const ld &ld);
 json listnodes(const ld &ld, const std::string &id = "");
 json listfunds(const ld &ld);
@@ -37,6 +53,8 @@ json fundchannel(const ld &ld, const std::string &id, uint64_t amount);
 
 // unmarshaling functions
 node unmarshal_node(const json &j);
+
+// C++ API
 node_list get_nodes(const ld &ld);
 }
 }
