@@ -44,17 +44,25 @@ std::string def_dir();
 int connect_uds(std::string_view dir, std::string_view filename);
 
 // lightningd json rpc commands
+json getinfo(const ld &ld);
 json listpeers(const ld &ld);
 json listnodes(const ld &ld, const std::string &id = "");
 json listfunds(const ld &ld);
 json newaddr(const ld &ld, bool bech32);
 json connect(const ld &ld, std::string_view peer_id, std::string_view peer_addr);
 json fundchannel(const ld &ld, const std::string &id, uint64_t amount);
+json close(const ld &ld, const std::string &id, bool force = false, int timeout = 30);
 
 // unmarshaling functions
 node unmarshal_node(const json &j);
 
 // C++ API
 node_list get_nodes(const ld &ld);
+void connect(const ld &ld, const node_list & nodes);
+void close(const ld &ld, const channel & channel, bool force);
+void close(const ld &ld, const channel_list & channels, bool force);
+
+// convenience
+bool is_testnet(const ld &ld);
 }
 }

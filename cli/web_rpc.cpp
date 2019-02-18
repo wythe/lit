@@ -1,4 +1,5 @@
 #include "web_rpc.h"
+#include "rpc_hosts.h"
 
 namespace ln = rpc::lightning;
 
@@ -54,19 +55,20 @@ json priceinfo(const https &https)
 	return request(https, "https://api.gemini.com/v1/pubticker/btcusd");
 }
 
-ln::node_list get_1ML_connected(const https &https)
+ln::node_list get_1ML_connected(const rpc::hosts &hosts)
 {
+	auto url = std::string{"https://1ml.com"};
+	if (ln::is_testnet(hosts.ld))
+		url += "/testnet";
+
 	ln::node_list nodes;
-	auto j =
-	    request(https, "https://1ml.com/testnet/"
-			   "node?order=channelcount&active=true&public=true&"
-			   "json=true");
+	url += "/node?order=channelcount&active=true&public=true&json=true";
+	auto j = request(hosts.https, url);
 	for (auto &n : j) {
 		nodes.emplace_back(ln::node{
 		    n.at("pub_key").get<std::string>(),
 		    n.at("alias").get<std::string>(),
 		    n.at("addresses").at(0).at("addr").get<std::string>()});
-
 	}
 	return nodes;
 }

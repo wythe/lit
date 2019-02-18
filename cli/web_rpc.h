@@ -5,6 +5,8 @@
 #include "ln_rpc.h"
 
 namespace rpc {
+	struct hosts;
+
 namespace web {
 struct https {
 	https();
@@ -18,6 +20,6 @@ json request(https &h, std::string_view url);
 
 json priceinfo(const https &https);
 
-rpc::lightning::node_list get_1ML_connected(const https &https);
+rpc::lightning::node_list get_1ML_connected(const rpc::hosts &hosts);
 }
 }

@@ -27,7 +27,6 @@ struct opts {
 	std::string rpc_dir, rpc_file;
 	std::string brpc_dir, brpc_file;
 
-	// FIXME Just make this a global?
 	rpc::hosts rpc;
 };
 
@@ -114,7 +113,8 @@ void getinfo(struct opts &opts)
 {
 	auto peers = ln::listpeers(opts.rpc.ld);
 	auto nodes = ln::get_nodes(opts.rpc.ld);
-	auto mlnodes = rpc::web::get_1ML_connected(opts.rpc.https);
+	auto mlnodes = rpc::web::get_1ML_connected(opts.rpc);
+	WARN("network is " << (ln::is_testnet(opts.rpc.ld) ? "testnet" : "mainnet"));
 	WARN(nodes.size() << " addressable nodes in network");
 	WARN(mlnodes.size() << " 1ML nodes");
 	WARN(peers["peers"].size() << " peers");

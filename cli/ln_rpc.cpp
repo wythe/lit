@@ -66,6 +66,7 @@ int connect_uds(string_view dir, string_view filename)
 
 static json request(const ld &ld, string_view method, const json &params)
 {
+	// TODO: add like a 1-minute caching mechanism here and in others.
 	std::string raw;
 	json j{{"jsonrpc", "2.0"},
 	       {"id", name()},
@@ -93,6 +94,11 @@ std::string def_dir()
 	path = env;
 	path += "/.lightning";
 	return path;
+}
+
+json getinfo(const ld &ld)
+{
+	return request(ld, "getinfo", json::array());
 }
 
 json listpeers(const ld &ld)
@@ -152,6 +158,29 @@ node_list get_nodes(const ld &ld)
 			nodes.emplace_back(unmarshal_node(jn));
 	}
 	return nodes;
+}
+
+void connect(const ld &ld, const node_list & nodes)
+{
+	for (auto &n : nodes)
+		connect(ld, n.nodeid, n.address);
+}
+
+void close(const ld &ld, const channel & channel, bool force)
+{
+	close(ld, ch.peer.nodeid, force, 30);
+}
+
+void close(const ld &ld, const channel_list & channels, bool force)
+{
+	for (auto &ch : channels)
+		close(ld, ch, force);
+}
+
+bool is_testnet(const ld &ld)
+{
+	auto j = getinfo(ld);
+	return j.at("network").get<std::string>() == "testnet";
 }
 
 } // lightning

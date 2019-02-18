@@ -28,13 +28,21 @@ channel_list unmarshal_channel_list(const rpc::hosts &hosts, const json &peers)
 ln::node_list get_nodes(const rpc::hosts &hosts)
 {
 	auto nodes = ln::get_nodes(hosts.ld);
-	if (nodes.size() < 200) {
-		auto ml_nodes = rpc::web::get_1ML_connected(hosts.https);
-		nodes.insert(nodes.end(), ml_nodes.begin(), ml_nodes.end());
-		std::sort(nodes.begin(), nodes.end());
-		auto last = std::unique(nodes.begin(), nodes.end());
-		nodes.erase(last, nodes.end());
+
+	if (nodes.size() >= 200)
+		return nodes;
+
+	// if ld is brand new and not connected to anything, then seed it
+	// with 1ML and abort.
+	if (nodes.size() == 0) {
+		auto ml_nodes = rpc::web::get_1ML_connected(hosts);
+		ln::connect(hosts.ld, ml_nodes);
+		PANIC("0 nodes in network view.  Seeding with 1ML...");
 	}
+
+	PANIC("network view sees "
+	      << nodes.size()
+	      << "nodes, 200 needed to proceed.  Please wait...");
 }
 
 int connect_n(const rpc::hosts &hosts, const channel_list &channels,
