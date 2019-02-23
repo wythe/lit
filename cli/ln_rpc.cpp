@@ -8,6 +8,38 @@
 #include "ln_rpc.h"
 
 using string_view = std::string_view;
+
+std::string lit::ld::def_dir()
+{
+	std::string path;
+
+	const char *env = getenv("HOME");
+	if (!env)
+		PANIC("HOME environment undefined");
+
+	path = env;
+	path += "/.lightning";
+	return path;
+}
+
+void lit::ld::connect_uds(string_view dir, string_view filename)
+{
+	struct sockaddr_un addr;
+	if (chdir(std::string(dir).c_str()) != 0)
+		PANIC("cannot chdir to " << dir);
+
+	fd = socket(AF_UNIX, SOCK_STREAM, 0);
+	if (fd < 0)
+		PANIC("socket() failed");
+	strcpy(addr.sun_path, std::string(filename).c_str());
+	addr.sun_family = AF_UNIX;
+
+	auto e = ::connect(fd, (struct sockaddr *)&addr, sizeof(addr));
+	if (e != 0)
+		PANIC("cannot connect to " << addr.sun_path << ": "
+					   << strerror(errno));
+}
+
 namespace lit {
 namespace rpc {
 static bool write_all(int fd, const void *data, size_t size)
@@ -67,26 +99,6 @@ static json read_json(int fd)
 	return json::parse(resp.begin(), resp.end());
 }
 
-int connect_uds(string_view dir, string_view filename)
-{
-	int fd;
-	struct sockaddr_un addr;
-	if (chdir(std::string(dir).c_str()) != 0)
-		PANIC("cannot chdir to " << dir);
-
-	fd = socket(AF_UNIX, SOCK_STREAM, 0);
-	if (fd < 0)
-		PANIC("socket() failed");
-	strcpy(addr.sun_path, std::string(filename).c_str());
-	addr.sun_family = AF_UNIX;
-
-	auto e = ::connect(fd, (struct sockaddr *)&addr, sizeof(addr));
-	if (e != 0)
-		PANIC("cannot connect to " << addr.sun_path << ": "
-					   << strerror(errno));
-	return fd;
-}
-
 static json request(const ld &ld, string_view method, const json &params)
 {
 	std::string raw;
@@ -103,19 +115,6 @@ static json request(const ld &ld, string_view method, const json &params)
 	if (r.count("error"))
 		PANIC(r.at("error"));
 	return r.at("result");
-}
-
-std::string def_dir()
-{
-	std::string path;
-
-	const char *env = getenv("HOME");
-	if (!env)
-		PANIC("HOME environment undefined");
-
-	path = env;
-	path += "/.lightning";
-	return path;
 }
 
 json getinfo(const ld &ld)

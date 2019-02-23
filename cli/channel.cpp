@@ -4,29 +4,9 @@
 
 namespace lit {
 
-#if 0
-channel::channel(const hosts &hosts, const peer &peer) : peer(peer)
-{
-#if 0
-	confirmations = bc::confirmations(
-	    hosts.bd,
-	    peer.at("channels").at(0).at("funding_txid").get<std::string>());
-#endif
-}
-
-channel_list unmarshal_channel_list(const hosts &hosts, const peer_list &peers)
-{
-	channel_list channels;
-#if 0
-	for (auto &p : peers)
-		channels.emplace_back(unmarshal_channel(hosts, p));
-#endif
-	return channels;
-}
-#endif
-
 int connect_n(const hosts &hosts,
-	      const node_list &nodes, int n)
+	      const node_list &nodes,
+	      int n)
 {
 	return 0;
 }
@@ -37,7 +17,7 @@ static void fund_all(const hosts & hosts,
 {
 }
 
-static void bootstrap(const hosts &hosts,
+void bootstrap(const hosts &hosts,
 		      const node_list &nodes,
 		      const peer_list &peers)
 {

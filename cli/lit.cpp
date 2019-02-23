@@ -8,8 +8,6 @@
 #include "rpc_hosts.h"
 #include "channel.h"
 
-using namespace lit;
-
 using satoshi = long long;
 using json = nlohmann::json;
 
@@ -38,7 +36,7 @@ static std::string dollars(satoshi value)
 	return ss.str();
 }
 
-static double get_btcusd(web::https &https)
+static double get_btcusd(lit::web::https &https)
 {
 	static double v = -1;
 	// Timer used here to cache last values for 5 seconds between calls.
@@ -50,14 +48,14 @@ static double get_btcusd(web::https &https)
 	    std::chrono::duration_cast<std::chrono::seconds>(now - last_time)
 		.count();
 	if (v < 0 || secs > 5) {
-		auto j = web::priceinfo(https);
+		auto j = lit::web::priceinfo(https);
 		auto last = j.at("last").get<std::string>();
 		v = std::stod(last);
 	}
 	return v;
 }
 
-static std::string to_dollars(web::https &https, satoshi s)
+static std::string to_dollars(lit::web::https &https, satoshi s)
 {
 	if (s == 0)
 		return "$0.00";
@@ -66,9 +64,9 @@ static std::string to_dollars(web::https &https, satoshi s)
 	return dollars(price * btc);
 }
 
-static satoshi get_funds(ld &ld)
+static satoshi get_funds(lit::ld &ld)
 {
-	auto res = rpc::listfunds(ld);
+	auto res = lit::rpc::listfunds(ld);
 
 	auto outputs = res["outputs"];
 	if (outputs.size() == 0)
@@ -82,7 +80,7 @@ static satoshi get_funds(ld &ld)
 
 void new_addr(opts &opts)
 {
-	auto res = rpc::newaddr(opts.rpc.ld, opts.bech32);
+	auto res = lit::rpc::newaddr(opts.rpc.ld, opts.bech32);
 	std::cout << res["address"].get<std::string>() << '\n';
 }
 
@@ -95,18 +93,18 @@ void list_funds(struct opts &opts)
 
 void list_nodes(struct opts &opts)
 {
-	std::cout << std::setw(4) << rpc::listnodes(opts.rpc.ld);
+	std::cout << std::setw(4) << lit::rpc::listnodes(opts.rpc.ld);
 }
 
 void getnetworkinfo(struct opts &opts)
 {
 	std::cout << "getting network info:\n";
-	std::cout << std::setw(4) << rpc::getnetworkinfo(opts.rpc.bd) << '\n';
+	std::cout << std::setw(4) << lit::rpc::getnetworkinfo(opts.rpc.bd) << '\n';
 }
 
 void list_peers(struct opts &opts)
 {
-	std::cout << std::setw(4) << rpc::listpeers(opts.rpc.ld);
+	std::cout << std::setw(4) << lit::rpc::listpeers(opts.rpc.ld);
 }
 
 void close_all(struct opts &opts)
@@ -122,10 +120,10 @@ void getinfo(struct opts &opts)
 	WARN(channels.size() << " channels in network");
 	auto peers = listpeers(opts.rpc.ld, nodes);
 	WARN(peers.size() << " peers");
-	auto mlnodes = web::get_1ML_connected(opts.rpc);
+	auto mlnodes = lit::web::get_1ML_connected(opts.rpc);
 	WARN(mlnodes.size() << " 1ML nodes");
 
-	WARN("block count is " << rpc::getblockcount(opts.rpc.bd));
+	WARN("block count is " << lit::rpc::getblockcount(opts.rpc.bd));
 	WARN("bitcoin price is " << to_dollars(opts.rpc.https, 100000000));
 	WARN("total funds: " << to_dollars(opts.rpc.https, get_funds(opts.rpc.ld)));
 }
@@ -135,6 +133,13 @@ void autopilot(struct opts &opts)
 	autopilot(opts.rpc);
 }
 
+void bootstrap(struct opts &opts)
+{
+	auto nodes = listnodes(opts.rpc.ld);
+	auto peers = listpeers(opts.rpc.ld, nodes);
+	lit::bootstrap(opts.rpc, nodes, peers);
+}
+
 template <typename T>
 wythe::cli::line<T> parse_opts(T &opts, int argc, char **argv)
 {
@@ -142,7 +147,7 @@ wythe::cli::line<T> parse_opts(T &opts, int argc, char **argv)
 	line<T> line("0.0.1", "lit", "Lightning Stuff",
 		     "lit [options] [command] [command-options]");
 
-	add_opt(line, "ln-dir", 'L', "lightning rpc dir", rpc::def_dir(),
+	add_opt(line, "ln-dir", 'L', "lightning rpc dir", lit::ld::def_dir(),
 		[&](std::string const &d) { opts.rpc_dir = d; });
 
 	add_opt(line, "ln-rpc-file", 'f', "lightning rpc file", "lightning-rpc",
@@ -167,6 +172,9 @@ wythe::cli::line<T> parse_opts(T &opts, int argc, char **argv)
 
 	add_cmd(line, "getinfo", "Display summary information on channels",
 		getinfo);
+	add_cmd(line, "bootstrap", "Get a new node connected",
+		bootstrap);
+
 
 	line.notes.emplace_back("Use at your own demise.\n");
 	parse(line, argc, argv);
@@ -178,7 +186,7 @@ int main(int argc, char **argv)
 	try {
 		opts opts;
 		auto line = parse_opts(opts, argc, argv);
-		opts.rpc.ld.fd = rpc::connect_uds(opts.rpc_dir, opts.rpc_file);
+		opts.rpc.ld.connect_uds(opts.rpc_dir, opts.rpc_file);
 		line.go(opts);
 
 		if (!line.targets.empty())

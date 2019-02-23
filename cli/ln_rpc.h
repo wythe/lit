@@ -17,13 +17,12 @@ struct ld {
 	// There can only be one
 	ld(const ld &) = delete;
 	ld &operator=(const ld &) = delete;
+	static std::string def_dir();
+	void connect_uds(std::string_view dir, std::string_view filename);
 	int fd = -1;
 };
 
 namespace rpc {
-// control
-std::string def_dir();
-int connect_uds(std::string_view dir, std::string_view filename);
 
 // lightningd json rpc commands
 json getinfo(const ld &ld);
