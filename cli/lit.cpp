@@ -6,12 +6,12 @@
 #include <wythe/exception.h>
 
 #include "rpc_hosts.h"
-#include "node.h"
+#include "channel.h"
+
+using namespace lit;
 
 using satoshi = long long;
 using json = nlohmann::json;
-namespace ln = rpc::lightning;
-namespace bc = rpc::bitcoin;
 
 bool g_json_trace = false; // trace json commands
 
@@ -27,7 +27,7 @@ struct opts {
 	std::string rpc_dir, rpc_file;
 	std::string brpc_dir, brpc_file;
 
-	rpc::hosts rpc;
+	lit::hosts rpc;
 };
 
 static std::string dollars(satoshi value)
@@ -38,7 +38,7 @@ static std::string dollars(satoshi value)
 	return ss.str();
 }
 
-static double get_btcusd(rpc::web::https &https)
+static double get_btcusd(web::https &https)
 {
 	static double v = -1;
 	// Timer used here to cache last values for 5 seconds between calls.
@@ -50,14 +50,14 @@ static double get_btcusd(rpc::web::https &https)
 	    std::chrono::duration_cast<std::chrono::seconds>(now - last_time)
 		.count();
 	if (v < 0 || secs > 5) {
-		auto j = rpc::web::priceinfo(https);
+		auto j = web::priceinfo(https);
 		auto last = j.at("last").get<std::string>();
 		v = std::stod(last);
 	}
 	return v;
 }
 
-static std::string to_dollars(rpc::web::https &https, satoshi s)
+static std::string to_dollars(web::https &https, satoshi s)
 {
 	if (s == 0)
 		return "$0.00";
@@ -66,9 +66,9 @@ static std::string to_dollars(rpc::web::https &https, satoshi s)
 	return dollars(price * btc);
 }
 
-static satoshi get_funds(ln::ld &ld)
+static satoshi get_funds(ld &ld)
 {
-	auto res = ln::listfunds(ld);
+	auto res = rpc::listfunds(ld);
 
 	auto outputs = res["outputs"];
 	if (outputs.size() == 0)
@@ -82,7 +82,7 @@ static satoshi get_funds(ln::ld &ld)
 
 void new_addr(opts &opts)
 {
-	auto res = ln::newaddr(opts.rpc.ld, opts.bech32);
+	auto res = rpc::newaddr(opts.rpc.ld, opts.bech32);
 	std::cout << res["address"].get<std::string>() << '\n';
 }
 
@@ -95,47 +95,44 @@ void list_funds(struct opts &opts)
 
 void list_nodes(struct opts &opts)
 {
-	std::cout << std::setw(4) << ln::listnodes(opts.rpc.ld);
+	std::cout << std::setw(4) << rpc::listnodes(opts.rpc.ld);
 }
 
 void getnetworkinfo(struct opts &opts)
 {
 	std::cout << "getting network info:\n";
-	std::cout << std::setw(4) << bc::getnetworkinfo(opts.rpc.bd) << '\n';
+	std::cout << std::setw(4) << rpc::getnetworkinfo(opts.rpc.bd) << '\n';
 }
 
 void list_peers(struct opts &opts)
 {
-	std::cout << std::setw(4) << ln::listpeers(opts.rpc.ld);
+	std::cout << std::setw(4) << rpc::listpeers(opts.rpc.ld);
+}
+
+void close_all(struct opts &opts)
+{
 }
 
 void getinfo(struct opts &opts)
 {
-	auto peers = ln::listpeers(opts.rpc.ld);
-	auto nodes = ln::get_nodes(opts.rpc.ld);
-	auto mlnodes = rpc::web::get_1ML_connected(opts.rpc);
-	WARN("network is " << (ln::is_testnet(opts.rpc.ld) ? "testnet" : "mainnet"));
+	WARN("network is " << (is_testnet(opts.rpc.ld) ? "testnet" : "mainnet"));
+	auto nodes = listnodes(opts.rpc.ld);
 	WARN(nodes.size() << " addressable nodes in network");
+	auto channels = listchannels(opts.rpc.ld);
+	WARN(channels.size() << " channels in network");
+	auto peers = listpeers(opts.rpc.ld, nodes);
+	WARN(peers.size() << " peers");
+	auto mlnodes = web::get_1ML_connected(opts.rpc);
 	WARN(mlnodes.size() << " 1ML nodes");
-	WARN(peers["peers"].size() << " peers");
-	auto channel_list = unmarshal_channel_list(opts.rpc, peers);
 
-	for (auto &ch : channel_list) {
-		WARN("id is " << ch.peer.nodeid);
-		WARN("state is " << ch.state);
-		WARN("confirmations is " << ch.confirmations);
-	}
-
-	WARN("block count is " << bc::getblockcount(opts.rpc.bd));
+	WARN("block count is " << rpc::getblockcount(opts.rpc.bd));
 	WARN("bitcoin price is " << to_dollars(opts.rpc.https, 100000000));
 	WARN("total funds: " << to_dollars(opts.rpc.https, get_funds(opts.rpc.ld)));
 }
 
 void autopilot(struct opts &opts)
 {
-	auto channels = unmarshal_channel_list(opts.rpc, ln::listpeers(opts.rpc.ld));
-	auto nodes = get_nodes(opts.rpc.ld);
-	autopilot(opts.rpc, channels, nodes);
+	autopilot(opts.rpc);
 }
 
 template <typename T>
@@ -145,7 +142,7 @@ wythe::cli::line<T> parse_opts(T &opts, int argc, char **argv)
 	line<T> line("0.0.1", "lit", "Lightning Stuff",
 		     "lit [options] [command] [command-options]");
 
-	add_opt(line, "ln-dir", 'L', "lightning rpc dir", ln::def_dir(),
+	add_opt(line, "ln-dir", 'L', "lightning rpc dir", rpc::def_dir(),
 		[&](std::string const &d) { opts.rpc_dir = d; });
 
 	add_opt(line, "ln-rpc-file", 'f', "lightning rpc file", "lightning-rpc",
@@ -181,7 +178,7 @@ int main(int argc, char **argv)
 	try {
 		opts opts;
 		auto line = parse_opts(opts, argc, argv);
-		opts.rpc.ld.fd = ln::connect_uds(opts.rpc_dir, opts.rpc_file);
+		opts.rpc.ld.fd = rpc::connect_uds(opts.rpc_dir, opts.rpc_file);
 		line.go(opts);
 
 		if (!line.targets.empty())

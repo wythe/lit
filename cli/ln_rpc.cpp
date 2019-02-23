@@ -1,14 +1,15 @@
-#include "ln_rpc.h"
-#include <wythe/common.h>
+#include <algorithm>
+#include <iterator>
+#include <random>
 #include <string_view>
-#include "node.h"
+#include <wythe/common.h>
+
+#include "channel.h"
+#include "ln_rpc.h"
 
 using string_view = std::string_view;
-namespace rpc
-{
-namespace lightning
-{
-
+namespace lit {
+namespace rpc {
 static bool write_all(int fd, const void *data, size_t size)
 {
 	while (size) {
@@ -26,22 +27,44 @@ static bool write_all(int fd, const void *data, size_t size)
 	return true;
 }
 
-static json read_all(int fd)
+/* Read an entire json rpc message and return. */
+static json read_json(int fd)
 {
-	std::string v;
-	v.reserve(360);
-	char ch;
-	int r;
-	while (r = read(fd, &ch, 1)) {
-		if (r <= 0)
-			PANIC("error talking to fd: " << r);
-		v.push_back(ch);
-		int avail;
-		ioctl(fd, FIONREAD, &avail);
-		if (avail == 0)
-			break;
+	std::vector<char> resp;
+	resp.resize(1024);
+	bool part = true;
+	int off = 0;
+	int i;
+	int brackets = 0;
+
+	while (part) {
+		i = read(fd, &resp[0] + off, resp.size() - 1 - off);
+		if (i <= 0)
+			PANIC("error reading from lightningd");
+		off += i;
+		/* NUL terminate */
+		resp[off] = '\0';
+
+		// count the { and } chars
+		brackets = 0; // FIXME fix this to not start over every time
+		for (auto &c : resp) {
+			if (c == '{')
+				brackets++;
+			if (c == '}')
+				brackets--;
+		}
+
+		if (brackets > 0) {
+			// resize and read more
+			if (off == resp.size() - 1)
+				resp.resize(resp.size() * 2);
+		} else {
+			// done
+			part = false;
+			resp.resize(off);
+		}
 	}
-	return json::parse(v);
+	return json::parse(resp.begin(), resp.end());
 }
 
 int connect_uds(string_view dir, string_view filename)
@@ -66,7 +89,6 @@ int connect_uds(string_view dir, string_view filename)
 
 static json request(const ld &ld, string_view method, const json &params)
 {
-	// TODO: add like a 1-minute caching mechanism here and in others.
 	std::string raw;
 	json j{{"jsonrpc", "2.0"},
 	       {"id", name()},
@@ -76,7 +98,7 @@ static json request(const ld &ld, string_view method, const json &params)
 	trace(j);
 	std::string s{j.dump()};
 	write_all(ld.fd, s.data(), s.size());
-	auto r = read_all(ld.fd);
+	auto r = read_json(ld.fd);
 	trace(r);
 	if (r.count("error"))
 		PANIC(r.at("error"));
@@ -111,6 +133,11 @@ json listnodes(const ld &ld, const std::string& id)
 	return request(ld, "listnodes", id.empty() ? json::array() : json{ id });
 }
 
+json listchannels(const ld &ld)
+{
+	return request(ld, "listchannels", json::array());
+}
+
 json listfunds(const ld &ld)
 {
 	return request(ld, "listfunds", json::array());
@@ -132,56 +159,123 @@ json connect(const ld &ld, string_view peer_id, string_view peer_addr)
 	return request(ld, "connect", {addr});
 }
 
+json disconnect(const ld &ld, const std::string & peer_id)
+{
+	return request(ld, "disconnect", {peer_id});
+}
+
 json fundchannel(const ld &ld, const std::string &id, uint64_t amount)
 {
 	return request(ld, "fundchannel", {id, amount});
 }
 
-node unmarshal_node(const json &j)
+json closechannel(const ld &ld, const std::string &id, bool force, int timeout)
 {
-	node n;
-	n.nodeid = j.at("nodeid").get<std::string>();
-	n.alias = j.at("alias").get<std::string>();
-	n.address = j.at("addresses").at(0).at("address").get<std::string>();
-	n.address += ":";
-	n.address += j.at("addresses").at(0).at("port").get<int>();
-	return n;
+	return request(ld, "fundchannel", {id, force, timeout});
+}
+} // rpc
+
+channel::channel(const json &j)
+{
 }
 
-node_list get_nodes(const ld &ld)
+node::node(const json &j)
 {
-	auto j = listnodes(ld);
+	nodeid = j.at("nodeid").get<std::string>();
+	alias = j.at("alias").get<std::string>();
+	address = j.at("addresses").at(0).at("address").get<std::string>();
+	address += ":";
+	address += j.at("addresses").at(0).at("port").get<int>();
+}
+
+node::node(const std::string nodeid, const std::string alias,
+	   const std::string address)
+    : nodeid(nodeid), alias(alias), address(address)
+{
+}
+
+peer::peer(const json &j, const node_list &nodes)
+{
+	auto i = std::find_if(nodes.begin(), nodes.end(), [&](auto n) {
+		return n.nodeid == j.at("id").get<std::string>();
+	});
+	if (i != nodes.end())
+		n = *i;
+}
+
+node_list listnodes(const ld &ld)
+{
+	auto j = rpc::listnodes(ld);
 	node_list nodes;
 	for (auto &jn : j.at("nodes")) {
 		// ignore if we can't address it
 		if (jn.count("addresses") && jn.at("addresses").size() > 0)
-			nodes.emplace_back(unmarshal_node(jn));
+			nodes.emplace_back(jn);
 	}
 	return nodes;
+}
+
+channel_list listchannels(const ld &ld)
+{
+	auto j = rpc::listchannels(ld);
+	channel_list channels;
+	for (auto &ch : j.at("channels"))
+		channels.emplace_back(ch);
+	return channels;
+}
+
+peer_list listpeers(const ld &ld, const node_list &nodes) 
+{
+	auto j = rpc::listpeers(ld);
+	peer_list peers;
+	for (auto &jp : j.at("peers"))
+		peers.emplace_back(jp, nodes);
+	return peers;
 }
 
 void connect(const ld &ld, const node_list & nodes)
 {
 	for (auto &n : nodes)
-		connect(ld, n.nodeid, n.address);
+		rpc::connect(ld, n.nodeid, n.address);
 }
 
-void close(const ld &ld, const channel & channel, bool force)
+void disconnect(const ld &ld, const peer_list & peers)
 {
-	close(ld, ch.peer.nodeid, force, 30);
+	for (auto &p : peers)
+		rpc::disconnect(ld, p.n.nodeid);
 }
 
-void close(const ld &ld, const channel_list & channels, bool force)
+void closechannel(const ld &ld, const peer & peer, bool force)
 {
-	for (auto &ch : channels)
-		close(ld, ch, force);
+	rpc::closechannel(ld, peer.n.nodeid, force, 30);
+}
+
+void closechannel(const ld &ld, const peer_list & peers, bool force)
+{
+	for (auto &ch : peers)
+		closechannel(ld, ch, force);
 }
 
 bool is_testnet(const ld &ld)
 {
-	auto j = getinfo(ld);
+	auto j = rpc::getinfo(ld);
 	return j.at("network").get<std::string>() == "testnet";
 }
 
-} // lightning
-} // rpc
+int connections(const ld &ld, const peer_list &peers)
+{
+	return std::count_if(peers.begin(), peers.end(),
+			     [](auto p) { return p.connected; });
+}
+
+void connect_random(const ld &ld, const node_list &nodes, int n)
+{
+	node_list rnd_nodes;
+	std::sample(nodes.begin(),
+		    nodes.end(),
+		    std::back_inserter(rnd_nodes),
+		    n,
+		    std::mt19937{std::random_device{}()});
+	connect(ld, rnd_nodes);
+}
+} // lit

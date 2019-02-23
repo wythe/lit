@@ -1,9 +1,7 @@
 #include "web_rpc.h"
 #include "rpc_hosts.h"
 
-namespace ln = rpc::lightning;
-
-namespace rpc {
+namespace lit {
 namespace web {
 static size_t write_callback(void *contents, size_t size, size_t n,
 			     std::string *s)
@@ -42,7 +40,7 @@ https::https()
 	curl_assert(curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 1L));
 	curl_assert(curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 2L));
 	curl_assert(curl_easy_setopt(c, CURLOPT_WRITEFUNCTION,
-				     rpc::web::write_callback));
+				     write_callback));
 }
 
 https::~https()
@@ -55,20 +53,20 @@ json priceinfo(const https &https)
 	return request(https, "https://api.gemini.com/v1/pubticker/btcusd");
 }
 
-ln::node_list get_1ML_connected(const rpc::hosts &hosts)
+node_list get_1ML_connected(const lit::hosts &hosts)
 {
 	auto url = std::string{"https://1ml.com"};
-	if (ln::is_testnet(hosts.ld))
+	if (is_testnet(hosts.ld))
 		url += "/testnet";
 
-	ln::node_list nodes;
+	node_list nodes;
 	url += "/node?order=channelcount&active=true&public=true&json=true";
 	auto j = request(hosts.https, url);
 	for (auto &n : j) {
-		nodes.emplace_back(ln::node{
+		nodes.emplace_back(
 		    n.at("pub_key").get<std::string>(),
 		    n.at("alias").get<std::string>(),
-		    n.at("addresses").at(0).at("addr").get<std::string>()});
+		    n.at("addresses").at(0).at("addr").get<std::string>());
 	}
 	return nodes;
 }

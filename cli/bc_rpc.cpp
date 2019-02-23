@@ -4,9 +4,7 @@
 
 using string_view = std::string_view;
 
-namespace rpc
-{
-namespace bitcoin
+namespace lit
 {
 
 static size_t write_callback(void *contents, size_t size, size_t n,
@@ -108,23 +106,23 @@ static json request(const bd &bd, string_view method, const json &params)
 	return r.at("result");
 }
 
-json getnetworkinfo(const bd &bd)
+json rpc::getnetworkinfo(const bd &bd)
 {
 	return request(bd, "getnetworkinfo", json::array());
 }
 
-json getblockcount(const bd &bd)
+json rpc::getblockcount(const bd &bd)
 {
 	return request(bd, "getblockcount", json::array());
 }
 
-json gettxout(const bd &bd, string_view txid, int count)
+json rpc::gettxout(const bd &bd, string_view txid, int count)
 {
 	json j{std::string{txid}, count};
 	return request(bd, "gettxout", j);
 }
 
-json getrawtransaction(const bd &bd, string_view txid)
+json rpc::getrawtransaction(const bd &bd, string_view txid)
 {
 	json j{std::string{txid}, 1};
 	return request(bd, "getrawtransaction", j);
@@ -132,9 +130,8 @@ json getrawtransaction(const bd &bd, string_view txid)
 
 int confirmations(const bd &bd, string_view txid)
 {
-	auto h = getrawtransaction(bd, txid);
+	auto h = rpc::getrawtransaction(bd, txid);
 	return h.at("confirmations").get<int>();
 }
 
-} // bitcoin
-} // rpc
+} // lit

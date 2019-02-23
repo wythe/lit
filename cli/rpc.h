@@ -17,9 +17,6 @@ using json = nlohmann::json;
 
 extern bool g_json_trace;
 
-namespace rpc
-{
-
 // the unique name of the program, used as id for json.
 inline std::string name()
 {
@@ -34,4 +31,3 @@ void trace(T &j)
 		std::cerr << std::setw(4) << j << '\n';
 }
 
-} // rpc

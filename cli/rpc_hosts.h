@@ -4,10 +4,10 @@
 #include "bc_rpc.h"
 #include "web_rpc.h"
 
-namespace rpc {
+namespace lit {
 struct hosts {
-	rpc::lightning::ld ld;
-	rpc::bitcoin::bd bd;
-	rpc::web::https https; 
+	lit::ld ld;
+	lit::bd bd;
+	lit::web::https https; 
 };
 }
