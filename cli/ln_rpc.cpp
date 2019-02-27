@@ -3,6 +3,7 @@
 #include <random>
 #include <string_view>
 #include <wythe/common.h>
+#include <poll.h>
 
 #include "channel.h"
 #include "ln_rpc.h"
@@ -60,7 +61,7 @@ static bool write_all(int fd, const void *data, size_t size)
 }
 
 /* Read an entire json rpc message and return. */
-static json read_json(int fd)
+static json read_json(int fd, int timeout_ms)
 {
 	std::vector<char> resp;
 	resp.resize(1024);
@@ -69,7 +70,17 @@ static json read_json(int fd)
 	int i;
 	int brackets = 0;
 
+	struct pollfd pfd = { fd, POLLIN, 0};
+
 	while (part) {
+		auto ret = poll(&pfd, 1, timeout_ms);
+		if (ret == -1) {
+			perror("poll()");
+			PANIC("error reading from lightningd");
+		} else if (ret == 0) {
+			PANIC("reading timeout from lightningd (" <<
+			timeout_ms << "ms)");
+		}
 		i = read(fd, &resp[0] + off, resp.size() - 1 - off);
 		if (i <= 0)
 			PANIC("error reading from lightningd");
@@ -82,7 +93,7 @@ static json read_json(int fd)
 		for (auto &c : resp) {
 			if (c == '{')
 				brackets++;
-			if (c == '}')
+			else if (c == '}')
 				brackets--;
 		}
 
@@ -99,7 +110,8 @@ static json read_json(int fd)
 	return json::parse(resp.begin(), resp.end());
 }
 
-static json request(const ld &ld, string_view method, const json &params)
+static json request(const ld &ld, string_view method, const json &params,
+		    int timeout_ms = -1)
 {
 	std::string raw;
 	json j{{"jsonrpc", "2.0"},
@@ -110,7 +122,7 @@ static json request(const ld &ld, string_view method, const json &params)
 	trace(j);
 	std::string s{j.dump()};
 	write_all(ld.fd, s.data(), s.size());
-	auto r = read_json(ld.fd);
+	auto r = read_json(ld.fd, timeout_ms);
 	trace(r);
 	if (r.count("error"))
 		PANIC(r.at("error"));
@@ -155,7 +167,7 @@ json connect(const ld &ld, string_view peer_id, string_view peer_addr)
 		addr += '@';
 		addr += peer_addr;
 	}
-	return request(ld, "connect", {addr});
+	return request(ld, "connect", {addr}, 3000);
 }
 
 json disconnect(const ld &ld, const std::string & peer_id)
