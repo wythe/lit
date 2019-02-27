@@ -31,7 +31,8 @@ void close(const channel_list &channels);
 // autopilot algorithm
 void autopilot(const hosts &hosts);
 
-void bootstrap(const hosts &hosts,
-	       const node_list &nodes,
-	       const peer_list &peers);
+/* Bootstrap a new lightning node by connecting to 10 random 1ML nodes
+ * and wait for network graph construction.  Then disconnect from them.
+ */
+void bootstrap(const hosts &hosts);
 }

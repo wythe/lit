@@ -57,6 +57,11 @@ struct node {
 	{
 		return a.nodeid == b.nodeid;
 	}
+	friend std::ostream& operator<<(std::ostream& os, const node &n)
+	{
+		os << n.nodeid;
+		return os;
+	}
 };
 
 using node_list = std::vector<node>;
@@ -74,8 +79,13 @@ struct peer {
 	peer() = default;
 	peer(const peer &) = default;
 	peer &operator=(const peer &) = default;
-	peer(const json &j, const node_list &nodes);
-	node n;
+	peer(const json &j);
+	friend std::ostream& operator<<(std::ostream& os, const peer &p)
+	{
+		os << p.id;
+		return os;
+	}
+	std::string id;
 	bool connected;
 };
 
@@ -83,15 +93,18 @@ using peer_list = std::vector<peer>;
 
 node_list listnodes(const ld &ld);
 channel_list listchannels(const ld &ld);
-peer_list listpeers(const ld &ld, const node_list &nodes);
-void connect(const ld &ld, const node_list &nodes);
-void disconnect(const ld &ld, const peer_list & peers);
+peer_list listpeers(const ld &ld);
+void connect(const ld &ld, const node &n);
+int connect(const ld &ld, const node_list &nodes);
+int disconnect(const ld &ld, const peer &p);
+int disconnect(const ld &ld, const peer_list &peers);
 void closechannel(const ld &ld, const peer &peer, bool force);
-void closechannel(const ld &ld, const peer_list &peers, bool force);
+int closechannel(const ld &ld, const peer_list &peers, bool force);
 
 // convenience
 bool is_testnet(const ld &ld);
-int connections(const ld &ld, const peer_list &peers);
-void connect_random(const ld &ld, const node_list &nodes, int n);
+int connections(const peer_list &peers);
+int addressable(const node_list &nodes);
+int connect_random(const ld &ld, const node_list &nodes, int n);
 
 } // lightning

@@ -170,7 +170,7 @@ json fundchannel(const ld &ld, const std::string &id, uint64_t amount)
 
 json closechannel(const ld &ld, const std::string &id, bool force, int timeout)
 {
-	return request(ld, "fundchannel", {id, force, timeout});
+	return request(ld, "close", {id, force, timeout});
 }
 } // rpc
 
@@ -181,10 +181,13 @@ channel::channel(const json &j)
 node::node(const json &j)
 {
 	nodeid = j.at("nodeid").get<std::string>();
-	alias = j.at("alias").get<std::string>();
-	address = j.at("addresses").at(0).at("address").get<std::string>();
-	address += ":";
-	address += j.at("addresses").at(0).at("port").get<int>();
+	if (j.count("alias"))
+		alias = j.at("alias").get<std::string>();
+	if (j.count("addresses") && j.at("addresses").size() > 0) {
+		address = j.at("addresses").at(0).at("address").get<std::string>();
+		address += ":";
+		address += j.at("addresses").at(0).at("port").get<int>();
+	}
 }
 
 node::node(const std::string nodeid, const std::string alias,
@@ -193,24 +196,18 @@ node::node(const std::string nodeid, const std::string alias,
 {
 }
 
-peer::peer(const json &j, const node_list &nodes)
+peer::peer(const json &j)
 {
-	auto i = std::find_if(nodes.begin(), nodes.end(), [&](auto n) {
-		return n.nodeid == j.at("id").get<std::string>();
-	});
-	if (i != nodes.end())
-		n = *i;
+	id = j.at("id").get<std::string>();
+	connected = j.at("connected").get<bool>();
 }
 
 node_list listnodes(const ld &ld)
 {
 	auto j = rpc::listnodes(ld);
 	node_list nodes;
-	for (auto &jn : j.at("nodes")) {
-		// ignore if we can't address it
-		if (jn.count("addresses") && jn.at("addresses").size() > 0)
-			nodes.emplace_back(jn);
-	}
+	for (auto &jn : j.at("nodes"))
+		nodes.emplace_back(jn);
 	return nodes;
 }
 
@@ -223,36 +220,60 @@ channel_list listchannels(const ld &ld)
 	return channels;
 }
 
-peer_list listpeers(const ld &ld, const node_list &nodes) 
+peer_list listpeers(const ld &ld) 
 {
 	auto j = rpc::listpeers(ld);
 	peer_list peers;
 	for (auto &jp : j.at("peers"))
-		peers.emplace_back(jp, nodes);
+		peers.emplace_back(jp);
 	return peers;
 }
 
-void connect(const ld &ld, const node_list & nodes)
+template <typename T, typename Op>
+int for_try(const ld &ld, std::string_view text, T list, Op op)
 {
-	for (auto &n : nodes)
-		rpc::connect(ld, n.nodeid, n.address);
+	auto i = 0;
+	for (auto &n : list) {
+		try {
+			std::cerr << text << n << '\n';
+			op(ld, n);
+			++i;
+		} catch (std::exception &e) {
+			std::cerr << e.what() << '\n';
+		}
+	}
+	return i;
 }
 
-void disconnect(const ld &ld, const peer_list & peers)
+void connect_to(const ld &ld, const node &n)
 {
-	for (auto &p : peers)
-		rpc::disconnect(ld, p.n.nodeid);
+	rpc::connect(ld, n.nodeid, n.address);
+}
+
+int connect(const ld &ld, const node_list & nodes)
+{
+	return for_try(ld, "connecting to ", nodes, connect_to);
+}
+
+int disconnect_from(const ld &ld, const peer &p)
+{
+	rpc::disconnect(ld, p.id);
+}
+
+int disconnect(const ld &ld, const peer_list & peers)
+{
+	return for_try(ld, "disconnecting from ", peers, disconnect_from);
 }
 
 void closechannel(const ld &ld, const peer & peer, bool force)
 {
-	rpc::closechannel(ld, peer.n.nodeid, force, 30);
+	rpc::closechannel(ld, peer.id, force, 30);
 }
 
-void closechannel(const ld &ld, const peer_list & peers, bool force)
+int closechannel(const ld &ld, const peer_list &peers, bool force)
 {
-	for (auto &ch : peers)
-		closechannel(ld, ch, force);
+	return for_try(ld, "closing ", peers,
+		       [](auto &ld, auto &p) { closechannel(ld, p, true); });
 }
 
 bool is_testnet(const ld &ld)
@@ -261,13 +282,19 @@ bool is_testnet(const ld &ld)
 	return j.at("network").get<std::string>() == "testnet";
 }
 
-int connections(const ld &ld, const peer_list &peers)
+int connections(const peer_list &peers)
 {
 	return std::count_if(peers.begin(), peers.end(),
 			     [](auto p) { return p.connected; });
 }
 
-void connect_random(const ld &ld, const node_list &nodes, int n)
+int addressable(const node_list &nodes)
+{
+	return std::count_if(nodes.begin(), nodes.end(),
+			     [](auto n) { return !n.address.empty(); });
+}
+
+int connect_random(const ld &ld, const node_list &nodes, int n)
 {
 	node_list rnd_nodes;
 	std::sample(nodes.begin(),
@@ -275,6 +302,6 @@ void connect_random(const ld &ld, const node_list &nodes, int n)
 		    std::back_inserter(rnd_nodes),
 		    n,
 		    std::mt19937{std::random_device{}()});
-	connect(ld, rnd_nodes);
+	return connect(ld, rnd_nodes);
 }
 } // lit

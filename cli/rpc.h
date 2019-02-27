@@ -30,4 +30,3 @@ void trace(T &j)
 	if (g_json_trace)
 		std::cerr << std::setw(4) << j << '\n';
 }
-

@@ -107,18 +107,22 @@ void list_peers(struct opts &opts)
 	std::cout << std::setw(4) << lit::rpc::listpeers(opts.rpc.ld);
 }
 
-void close_all(struct opts &opts)
+void closeall(struct opts &opts)
 {
+	auto peers = listpeers(opts.rpc.ld);
+	auto i = lit::closechannel(opts.rpc.ld, peers, true);
+	std::cout << "closed " << i << " channel" << ((i == 1) ? ".\n" : "s.\n");
 }
 
 void getinfo(struct opts &opts)
 {
 	WARN("network is " << (is_testnet(opts.rpc.ld) ? "testnet" : "mainnet"));
 	auto nodes = listnodes(opts.rpc.ld);
-	WARN(nodes.size() << " addressable nodes in network");
+	WARN(nodes.size() << " nodes in network (" << addressable(nodes) << 
+		" addressable).");
 	auto channels = listchannels(opts.rpc.ld);
 	WARN(channels.size() << " channels in network");
-	auto peers = listpeers(opts.rpc.ld, nodes);
+	auto peers = listpeers(opts.rpc.ld);
 	WARN(peers.size() << " peers");
 	auto mlnodes = lit::web::get_1ML_connected(opts.rpc);
 	WARN(mlnodes.size() << " 1ML nodes");
@@ -135,16 +139,14 @@ void autopilot(struct opts &opts)
 
 void bootstrap(struct opts &opts)
 {
-	auto nodes = listnodes(opts.rpc.ld);
-	auto peers = listpeers(opts.rpc.ld, nodes);
-	lit::bootstrap(opts.rpc, nodes, peers);
+	lit::bootstrap(opts.rpc);
 }
 
 template <typename T>
 wythe::cli::line<T> parse_opts(T &opts, int argc, char **argv)
 {
 	using namespace wythe::cli;
-	line<T> line("0.0.1", "lit", "Lightning Stuff",
+	line<T> line("0.0.1", "lit", "Lightning Things",
 		     "lit [options] [command] [command-options]");
 
 	add_opt(line, "ln-dir", 'L', "lightning rpc dir", lit::ld::def_dir(),
@@ -172,6 +174,8 @@ wythe::cli::line<T> parse_opts(T &opts, int argc, char **argv)
 
 	add_cmd(line, "getinfo", "Display summary information on channels",
 		getinfo);
+	add_cmd(line, "closeall", "Close all open channels, forcibly if necessary.",
+		closeall);
 	add_cmd(line, "bootstrap", "Get a new node connected",
 		bootstrap);
 

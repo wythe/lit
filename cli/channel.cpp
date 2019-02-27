@@ -17,30 +17,30 @@ static void fund_all(const hosts & hosts,
 {
 }
 
-void bootstrap(const hosts &hosts,
-		      const node_list &nodes,
-		      const peer_list &peers)
+void bootstrap(const hosts &rpc)
 {
-	// If our graph is too small, connect to 1ML and then exit.
-	if (nodes.size() < 200) {
-		if (connections(hosts.ld, peers) < 10) {
-			auto nodes_1ML = web::get_1ML_connected(hosts);
-			connect_random(hosts.ld, nodes_1ML, 10);
+	auto nodes = listnodes(rpc.ld);
+	auto peers = listpeers(rpc.ld);
+
+	while (nodes.size() < 400) {
+		auto num = connections(peers);
+		if (num < 10) {
+			auto nodes_1ML = web::get_1ML_connected(rpc);
+			auto n = connect_random(rpc.ld, nodes_1ML, 10 - num);
 		}
-		PANIC("Too few nodes in network: " << nodes.size()
-						   << " (200 required).");
+		nodes = listnodes(rpc.ld);
+		peers = listpeers(rpc.ld);
 	}
-	// Network is good, remove all non-channel connections so we can proceed
-	// to next phase.
-	disconnect(hosts.ld, peers);
+	// Network is good, remove all non-channel connections.
+	disconnect(rpc.ld, peers);
 }
 
 void autopilot(const hosts &hosts)
 {
 	auto nodes = listnodes(hosts.ld);
 	auto channels = listchannels(hosts.ld);
-	auto peers = listpeers(hosts.ld, nodes);
+	auto peers = listpeers(hosts.ld);
 
-	bootstrap(hosts, nodes, peers);
+	bootstrap(hosts);
 }
 }
