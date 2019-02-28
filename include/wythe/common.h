@@ -240,7 +240,7 @@ inline bool string_to_int64(int64_t &value, const char *s, int base = 10)
 	errno = 0;
 	value = strtoll(s, &end, base);
 	if (errno)
-		WARN("string_to_int64 errno: " << strerror(errno));
+		std::cerr << "string_to_int64 errno: " << strerror(errno);
 	return (errno == 0 && *end == '\0');
 }
 

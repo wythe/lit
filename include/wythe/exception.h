@@ -19,6 +19,7 @@ inline std::runtime_error create_exception(const std::string & desc, const char 
 }
 }
 
+#if 0
 // Print to std::cerr a description with source file and line number.  Or log on ANDROID platforms.
 #ifdef ANDROID
 #define WARN(s) \
@@ -36,6 +37,7 @@ do { \
     auto e = wythe::create_exception(os.str(), __FILE__, __LINE__); \
     std::cerr << e.what() << '\n'; \
 } while (0)
+#endif
 #endif
 
 // Throw a std::runtime_error with description.

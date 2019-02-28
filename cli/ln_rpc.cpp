@@ -7,6 +7,7 @@
 
 #include "channel.h"
 #include "ln_rpc.h"
+#include "logger.h"
 
 using string_view = std::string_view;
 
@@ -26,8 +27,9 @@ std::string lit::ld::def_dir()
 void lit::ld::connect_uds(string_view dir, string_view filename)
 {
 	struct sockaddr_un addr;
-	if (chdir(std::string(dir).c_str()) != 0)
-		PANIC("cannot chdir to " << dir);
+	auto d = std::string(dir);
+	if (chdir(d.c_str()) != 0)
+		PANIC("cannot chdir to '" << dir << "'");
 
 	fd = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (fd < 0)
@@ -247,11 +249,11 @@ int for_try(const ld &ld, std::string_view text, T list, Op op)
 	auto i = 0;
 	for (auto &n : list) {
 		try {
-			std::cerr << text << n << '\n';
+			log_info << text << n << '\n';
 			op(ld, n);
 			++i;
 		} catch (std::exception &e) {
-			std::cerr << e.what() << '\n';
+			log_info << e.what() << '\n';
 		}
 	}
 	return i;

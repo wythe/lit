@@ -7,6 +7,7 @@
 
 #include "rpc_hosts.h"
 #include "channel.h"
+#include "logger.h"
 
 using satoshi = long long;
 using json = nlohmann::json;
@@ -38,21 +39,9 @@ static std::string dollars(satoshi value)
 
 static double get_btcusd(lit::web::https &https)
 {
-	static double v = -1;
-	// Timer used here to cache last values for 5 seconds between calls.
-	// This way we don't have to worry about
-	// hammering gemini.
-	static auto last_time = std::chrono::system_clock::now();
-	auto now = std::chrono::system_clock::now();
-	double secs =
-	    std::chrono::duration_cast<std::chrono::seconds>(now - last_time)
-		.count();
-	if (v < 0 || secs > 5) {
-		auto j = lit::web::priceinfo(https);
-		auto last = j.at("last").get<std::string>();
-		v = std::stod(last);
-	}
-	return v;
+	auto j = lit::web::priceinfo(https);
+	auto last = j.at("last").get<std::string>();
+	return std::stod(last);
 }
 
 static std::string to_dollars(lit::web::https &https, satoshi s)
@@ -78,68 +67,39 @@ static satoshi get_funds(lit::ld &ld)
 	return total;
 }
 
-void new_addr(opts &opts)
+void getinfo(struct opts &opts)
 {
-	auto res = lit::rpc::newaddr(opts.rpc.ld, opts.bech32);
-	std::cout << res["address"].get<std::string>() << '\n';
+	log_info << "network is " << (is_testnet(opts.rpc.ld) ? "testnet" : "mainnet");
+	auto nodes = listnodes(opts.rpc.ld);
+	log_info << nodes.size() << " nodes in network (" << addressable(nodes) << 
+		" addressable).";
+	auto channels = listchannels(opts.rpc.ld);
+	log_info << channels.size() << " channels in network";
+	auto peers = listpeers(opts.rpc.ld);
+	log_info << peers.size() << " peers";
+	auto mlnodes = lit::web::get_1ML_connected(opts.rpc);
+	log_info << mlnodes.size() << " 1ML nodes";
+
+	log_info << "block count is " << lit::rpc::getblockcount(opts.rpc.bd);
+	log_info << "bitcoin price is " << to_dollars(opts.rpc.https, 100000000);
+	log_info << "total funds: " << to_dollars(opts.rpc.https, get_funds(opts.rpc.ld));
 }
 
-void list_funds(struct opts &opts)
+void bootstrap(struct opts &opts)
 {
-	std::cout << std::setw(4)
-		  << to_dollars(opts.rpc.https, get_funds(opts.rpc.ld))
-		  << '\n';
-}
-
-void list_nodes(struct opts &opts)
-{
-	std::cout << std::setw(4) << lit::rpc::listnodes(opts.rpc.ld);
-}
-
-void getnetworkinfo(struct opts &opts)
-{
-	std::cout << "getting network info:\n";
-	std::cout << std::setw(4) << lit::rpc::getnetworkinfo(opts.rpc.bd) << '\n';
-}
-
-void list_peers(struct opts &opts)
-{
-	std::cout << std::setw(4) << lit::rpc::listpeers(opts.rpc.ld);
+	lit::bootstrap(opts.rpc);
 }
 
 void closeall(struct opts &opts)
 {
 	auto peers = listpeers(opts.rpc.ld);
 	auto i = lit::closechannel(opts.rpc.ld, peers, true);
-	std::cout << "closed " << i << " channel" << ((i == 1) ? ".\n" : "s.\n");
-}
-
-void getinfo(struct opts &opts)
-{
-	WARN("network is " << (is_testnet(opts.rpc.ld) ? "testnet" : "mainnet"));
-	auto nodes = listnodes(opts.rpc.ld);
-	WARN(nodes.size() << " nodes in network (" << addressable(nodes) << 
-		" addressable).");
-	auto channels = listchannels(opts.rpc.ld);
-	WARN(channels.size() << " channels in network");
-	auto peers = listpeers(opts.rpc.ld);
-	WARN(peers.size() << " peers");
-	auto mlnodes = lit::web::get_1ML_connected(opts.rpc);
-	WARN(mlnodes.size() << " 1ML nodes");
-
-	WARN("block count is " << lit::rpc::getblockcount(opts.rpc.bd));
-	WARN("bitcoin price is " << to_dollars(opts.rpc.https, 100000000));
-	WARN("total funds: " << to_dollars(opts.rpc.https, get_funds(opts.rpc.ld)));
+	log_info << "closed " << i << " channel" << ((i == 1) ? ".\n" : "s.\n");
 }
 
 void autopilot(struct opts &opts)
 {
 	autopilot(opts.rpc);
-}
-
-void bootstrap(struct opts &opts)
-{
-	lit::bootstrap(opts.rpc);
 }
 
 template <typename T>
@@ -149,28 +109,14 @@ wythe::cli::line<T> parse_opts(T &opts, int argc, char **argv)
 	line<T> line("0.0.1", "lit", "Lightning Things",
 		     "lit [options] [command] [command-options]");
 
-	add_opt(line, "ln-dir", 'L', "lightning rpc dir", lit::ld::def_dir(),
+	add_opt(line, "lightning-dir", 'l', "lightning rpc dir", lit::ld::def_dir(),
 		[&](std::string const &d) { opts.rpc_dir = d; });
 
-	add_opt(line, "ln-rpc-file", 'f', "lightning rpc file", "lightning-rpc",
+	add_opt(line, "rpc-file", 'r', "lightning rpc file", "lightning-rpc",
 		[&](std::string const &f) { opts.rpc_file = f; });
 
 	add_opt(line, "trace", 't', "Display rpc json request and response",
 		[&] { g_json_trace = true; });
-
-	add_cmd(line, "listfunds", "Show funds available for opening channels",
-		list_funds);
-	add_cmd(line, "listnodes", "List all the nodes we see", list_nodes);
-	add_cmd(line, "getnetworkinfo",
-		"Show bitcoin and lightningnetwork info.", getnetworkinfo);
-
-	add_cmd(line, "listpeers", "List our peers", list_peers);
-	auto c =
-	    emp_cmd(line, "newaddr",
-		    "Request a new bitcoin address for use in funding channels",
-		    new_addr);
-	add_opt(*c, "p2sh", 'p', "Use p2sh-segwit address (default is bech32)",
-		[&] { opts.bech32 = false; });
 
 	add_cmd(line, "getinfo", "Display summary information on channels",
 		getinfo);
@@ -196,8 +142,8 @@ int main(int argc, char **argv)
 		if (!line.targets.empty())
 			PANIC("unrecognized command: " << line.targets[0]);
 	} catch (std::invalid_argument &e) {
-		std::cerr << "invalid argument: " << e.what() << '\n';
+		log_fatal << "invalid argument: " << e.what();
 	} catch (std::exception &e) {
-		std::cerr << e.what() << '\n';
+		log_fatal << e.what();
 	}
 }
