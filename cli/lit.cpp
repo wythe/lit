@@ -2,8 +2,8 @@
 #include <iomanip>
 #include <locale>
 #include <nlohmann/json.hpp>
-#include <wythe/command.h>
 #include <wythe/exception.h>
+#include <CLI/CLI.hpp>
 
 #include "rpc_hosts.h"
 #include "channel.h"
@@ -15,7 +15,10 @@ using json = nlohmann::json;
 bool g_json_trace = false; // trace json commands
 
 struct opts {
-	opts() = default;
+	opts() {
+		rpc_dir = lit::ld::def_dir();
+		rpc_file = "lightning-rpc";
+	}
 	opts(const opts &) = delete;
 	opts &operator=(const opts &) = delete;
 
@@ -26,7 +29,25 @@ struct opts {
 	std::string rpc_dir, rpc_file;
 	std::string brpc_dir, brpc_file;
 
+	// timeout for network requests (ms)
+	int timeout = 3000;
+
+	std::string log_level = "info";
+
+	// connect/disconnect/fundchannel/close: number of nodes 
+	int count = 1;
+
 	lit::hosts rpc;
+};
+
+class cli : public CLI::App {
+	public:
+	cli(struct opts & opts) : opts(opts) {}
+	virtual void pre_callback() {
+		opts.rpc.ld.connect_uds(opts.rpc_dir, opts.rpc_file);
+		set_log_level(opts.log_level);
+	}
+	struct opts & opts;
 };
 
 static std::string dollars(satoshi value)
@@ -69,20 +90,39 @@ static satoshi get_funds(lit::ld &ld)
 
 void getinfo(struct opts &opts)
 {
-	log_info << "network is " << (is_testnet(opts.rpc.ld) ? "testnet" : "mainnet");
+	l_info("network is " << (is_testnet(opts.rpc.ld) ? "testnet" : "mainnet"));
 	auto nodes = listnodes(opts.rpc.ld);
-	log_info << nodes.size() << " nodes in network (" << addressable(nodes) << 
-		" addressable).";
+	l_info(nodes.size() << " nodes in network (" << addressable(nodes) << 
+		" addressable).");
 	auto channels = listchannels(opts.rpc.ld);
-	log_info << channels.size() << " channels in network";
+	l_info(channels.size() << " channels in network");
 	auto peers = listpeers(opts.rpc.ld);
-	log_info << peers.size() << " peers";
+	l_info(peers.size() << " peers");
 	auto mlnodes = lit::web::get_1ML_connected(opts.rpc);
-	log_info << mlnodes.size() << " 1ML nodes";
+	l_info(mlnodes.size() << " 1ML nodes");
 
-	log_info << "block count is " << lit::rpc::getblockcount(opts.rpc.bd);
-	log_info << "bitcoin price is " << to_dollars(opts.rpc.https, 100000000);
-	log_info << "total funds: " << to_dollars(opts.rpc.https, get_funds(opts.rpc.ld));
+	l_info("block count is " << lit::rpc::getblockcount(opts.rpc.bd));
+	l_info("bitcoin price is " << to_dollars(opts.rpc.https, 100000000));
+	l_info("total funds: " << to_dollars(opts.rpc.https, get_funds(opts.rpc.ld)));
+}
+
+void connectn(struct opts &opts)
+{
+	l_info("connecting to " << opts.count << " nodes");
+	auto nodes = listnodes(opts.rpc.ld);
+	lit::strip_non_addressable(nodes);
+	if (opts.count > nodes.size())
+		PANIC("requesting " << opts.count
+				    << " connections but there are only "
+				    << nodes.size() << " nodes in network.");
+	connect_random2(opts.rpc.ld, nodes, opts.count);
+}
+
+void closeall(struct opts &opts)
+{
+	auto peers = listpeers(opts.rpc.ld);
+	auto i = lit::closechannel(opts.rpc.ld, peers, true);
+	l_info("closed " << i << " channel" << ((i == 1) ? ".\n" : "s.\n"));
 }
 
 void bootstrap(struct opts &opts)
@@ -90,60 +130,52 @@ void bootstrap(struct opts &opts)
 	lit::bootstrap(opts.rpc);
 }
 
-void closeall(struct opts &opts)
-{
-	auto peers = listpeers(opts.rpc.ld);
-	auto i = lit::closechannel(opts.rpc.ld, peers, true);
-	log_info << "closed " << i << " channel" << ((i == 1) ? ".\n" : "s.\n");
-}
-
 void autopilot(struct opts &opts)
 {
 	autopilot(opts.rpc);
 }
 
-template <typename T>
-wythe::cli::line<T> parse_opts(T &opts, int argc, char **argv)
+int CLI11_parse(opts &opts, int argc, char **argv)
 {
-	using namespace wythe::cli;
-	line<T> line("0.0.1", "lit", "Lightning Things",
-		     "lit [options] [command] [command-options]");
+	cli app(opts);
+	app.add_option("--lightning-dir", opts.rpc_dir, "lightningd rpc dir",
+		       true);
+	app.add_option("-f,--rpc_file", opts.rpc_file, "lightningd rpc file",
+		       true);
+	app.add_flag("-t,--trace", g_json_trace,
+		     "Display rpc json requests and responses");
+	app.add_option("-l,--log-level", opts.log_level,
+		       "log level (io, debug, info, error, fatal)", true)
+	    ->check(CLI::IsMember({"io", "debug", "info", "error", "fatal"},
+				  CLI::ignore_case));
 
-	add_opt(line, "lightning-dir", 'l', "lightning rpc dir", lit::ld::def_dir(),
-		[&](std::string const &d) { opts.rpc_dir = d; });
+	app.require_subcommand(1);
 
-	add_opt(line, "rpc-file", 'r', "lightning rpc file", "lightning-rpc",
-		[&](std::string const &f) { opts.rpc_file = f; });
+	app.add_subcommand("getinfo", "Display summary information on channels")
+	    ->callback([&]() { getinfo(opts); });
+	app.add_subcommand("closeall",
+			   "Close all open channels, forcibly if necessary.")
+	    ->callback([&]() { closeall(opts); });
 
-	add_opt(line, "trace", 't', "Display rpc json request and response",
-		[&] { g_json_trace = true; });
+	auto c = app.add_subcommand("connect", "Connect to random nodes.");
+	c->callback([&]() { connectn(opts); });
+	c->add_option("-t,--timeout", opts.timeout, "conenction timeout", true);
+	//c->add_option("count", opts.count, "node count")->required();
 
-	add_cmd(line, "getinfo", "Display summary information on channels",
-		getinfo);
-	add_cmd(line, "closeall", "Close all open channels, forcibly if necessary.",
-		closeall);
-	add_cmd(line, "bootstrap", "Get a new node connected",
-		bootstrap);
+	app.add_subcommand("bootstrap", "Get a new node connected")
+	    ->callback([&]() { bootstrap(opts); });
 
-
-	line.notes.emplace_back("Use at your own demise.\n");
-	parse(line, argc, argv);
-	return line;
+	CLI11_PARSE(app, argc, argv);
+	return 0;
 }
 
 int main(int argc, char **argv)
 {
 	try {
 		opts opts;
-		auto line = parse_opts(opts, argc, argv);
-		opts.rpc.ld.connect_uds(opts.rpc_dir, opts.rpc_file);
-		line.go(opts);
-
-		if (!line.targets.empty())
-			PANIC("unrecognized command: " << line.targets[0]);
-	} catch (std::invalid_argument &e) {
-		log_fatal << "invalid argument: " << e.what();
+		return CLI11_parse(opts, argc, argv);
 	} catch (std::exception &e) {
-		log_fatal << e.what();
+		l_fatal(e.what());
 	}
 }
+

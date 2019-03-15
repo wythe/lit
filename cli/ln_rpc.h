@@ -45,10 +45,8 @@ struct node {
 	node(const node &) = default;
 	node &operator=(const node &) = default;
 	node(const json &j);
-	node(const std::string nodeid, const std::string alias, const std::string address);
-	std::string nodeid;
-	std::string alias;
-	std::string address;
+	node(const std::string nodeid, const std::string alias,
+	     const std::string address);
 	friend bool operator<(const node &a, const node &b)
 	{
 		return a.nodeid < b.nodeid;
@@ -57,11 +55,11 @@ struct node {
 	{
 		return a.nodeid == b.nodeid;
 	}
-	friend std::ostream& operator<<(std::ostream& os, const node &n)
-	{
-		os << n.nodeid;
-		return os;
-	}
+	friend std::ostream &operator<<(std::ostream &os, node n);
+
+	std::string nodeid;
+	std::string alias;
+	std::string address;
 };
 
 using node_list = std::vector<node>;
@@ -105,6 +103,8 @@ int closechannel(const ld &ld, const peer_list &peers, bool force);
 bool is_testnet(const ld &ld);
 int connections(const peer_list &peers);
 int addressable(const node_list &nodes);
+void strip_non_addressable(node_list &nodes);
 int connect_random(const ld &ld, const node_list &nodes, int n);
+int connect_random2(const ld &ld, const node_list &nodes, int n);
 
 } // lightning

@@ -9,5 +9,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CURL_LIBRARY "-lcurl")
 find_package(CURL REQUIRED)
 
+find_package(Boost 1.54.0 REQUIRED COMPONENTS program_options log)
+add_library(boost INTERFACE IMPORTED)
+
 add_subdirectory(cli)
 enable_testing()

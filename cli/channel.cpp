@@ -2,6 +2,8 @@
 #include "rpc_hosts.h"
 #include <random>
 #include <unistd.h>
+#include "logger.h"
+#include <nlohmann/json.hpp>
 
 namespace lit {
 
@@ -16,26 +18,25 @@ void bootstrap(const hosts &rpc)
 	auto nodes = listnodes(rpc.ld);
 	auto peers = listpeers(rpc.ld);
 
-	if (addressable(nodes) > 400)
+	if (addressable(nodes) > 500)
 		return;
 
 	auto nodes_1ML = web::get_1ML_connected(rpc);
-	std::cerr << "connecting to peers\n";
+	l_info("connecting to peers");
 	while (connections(peers) < 10) {
 		connect_random(rpc.ld, nodes_1ML, 10 - connections(peers));
 		peers = listpeers(rpc.ld);
 	}
 
-	std::cerr << "building network...\n";
-	while (addressable(nodes) < 400) {
-		std::cerr << nodes.size() << " nodes, " << addressable(nodes)
-			  << " addressable.\n";
+	l_info("building network");
+	l_info("waiting for 500 addressable nodes...");
+	do {
 		sleep(2);
 		nodes = listnodes(rpc.ld);
-		peers = listpeers(rpc.ld);
-	}
-	std::cerr << "building network complete, disconnecting peers.n";
-	// Network is good, remove all non-channel connections.
+		l_info(nodes.size() << " nodes, " << addressable(nodes)
+			  << " addressable.");
+	} while (addressable(nodes) < 500);
+	l_info("building network complete, disconnecting peers.");
 	disconnect(rpc.ld, peers);
 }
 

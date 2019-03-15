@@ -198,9 +198,11 @@ node::node(const json &j)
 	if (j.count("alias"))
 		alias = j.at("alias").get<std::string>();
 	if (j.count("addresses") && j.at("addresses").size() > 0) {
-		address = j.at("addresses").at(0).at("address").get<std::string>();
+		address =
+		    j.at("addresses").at(0).at("address").get<std::string>();
 		address += ":";
-		address += j.at("addresses").at(0).at("port").get<int>();
+		address += std::to_string(
+		    j.at("addresses").at(0).at("port").get<int>());
 	}
 }
 
@@ -208,6 +210,12 @@ node::node(const std::string nodeid, const std::string alias,
 	   const std::string address)
     : nodeid(nodeid), alias(alias), address(address)
 {
+}
+
+std::ostream &operator<<(std::ostream &os, node n)
+{
+	os << n.nodeid.substr(0, 6) << "... " << n.address;
+	return os;
 }
 
 peer::peer(const json &j)
@@ -249,11 +257,11 @@ int for_try(const ld &ld, std::string_view text, T list, Op op)
 	auto i = 0;
 	for (auto &n : list) {
 		try {
-			log_info << text << n << '\n';
+			l_info(text << n);
 			op(ld, n);
 			++i;
 		} catch (std::exception &e) {
-			log_info << e.what() << '\n';
+			l_info(e.what());
 		}
 	}
 	return i;
@@ -308,8 +316,37 @@ int addressable(const node_list &nodes)
 			     [](auto n) { return !n.address.empty(); });
 }
 
+void strip_non_addressable(node_list &nodes)
+{
+	nodes.erase(std::remove_if(nodes.begin(), nodes.end(),
+				   [](auto n) { return n.address.empty(); }),
+		    nodes.end());
+}
+
+int connect_random2(const ld &ld, const node_list &nodes, int n)
+{
+	l_trace(" connecting to " << n << " random nodes");
+	node_list rnd_nodes;
+	int i = 0;
+	int tries = 0;
+	while (i < n) {
+		tries += n - i;
+		std::sample(nodes.begin(),
+			    nodes.end(),
+			    std::back_inserter(rnd_nodes),
+			    n - i,
+			    std::mt19937{std::random_device{}()});
+		int count = connect(ld, rnd_nodes);
+		i += count;
+		rnd_nodes.clear();
+	}
+	l_info(i << " connections made after " << tries << " tries");
+	return i;
+}
+
 int connect_random(const ld &ld, const node_list &nodes, int n)
 {
+	l_trace(" connecting to " << n << " random nodes");
 	node_list rnd_nodes;
 	std::sample(nodes.begin(),
 		    nodes.end(),

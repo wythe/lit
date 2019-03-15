@@ -1,13 +1,28 @@
 #pragma once
+#include <iosfwd>
 
-#include <boost/log/trivial.hpp>
-#include <boost/log/sources/global_logger_storage.hpp>
+void spdlog_info(std::ostringstream &os);
 
-BOOST_LOG_GLOBAL_LOGGER(logger, boost::log::sources::severity_logger_mt<boost::log::trivial::severity_level>)
+void set_log_level(const std::string & level);
 
-#define log_trace   BOOST_LOG_TRIVIAL(trace)
-#define log_debug   BOOST_LOG_TRIVIAL(debug)
-#define log_info    BOOST_LOG_TRIVIAL(info)
-#define log_warning BOOST_LOG_TRIVIAL(warning)
-#define log_error   BOOST_LOG_TRIVIAL(error)
-#define log_fatal   BOOST_LOG_TRIVIAL(fatal)
+#define l_info(desc) \
+do { \
+    std::ostringstream os; \
+    os << desc; \
+    spdlog_info(os); \
+} while (0)
+
+#define l_trace(desc) \
+do { \
+    std::ostringstream os; \
+    os << desc; \
+    spdlog_info(os); \
+} while (0)
+
+#define l_fatal(desc) \
+do { \
+    std::ostringstream os; \
+    os << desc; \
+    spdlog_info(os); \
+} while (0)
+
