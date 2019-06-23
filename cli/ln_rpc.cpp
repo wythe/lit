@@ -177,9 +177,9 @@ json disconnect(const ld &ld, const std::string & peer_id)
 	return request(ld, "disconnect", {peer_id});
 }
 
-json fundchannel(const ld &ld, const std::string &id, uint64_t amount)
+json openchannel(const ld &ld, const std::string &id, uint64_t sats)
 {
-	return request(ld, "fundchannel", {id, amount});
+	return request(ld, "fundchannel", {id, sats});
 }
 
 json closechannel(const ld &ld, const std::string &id, bool force, int timeout)
@@ -212,9 +212,15 @@ node::node(const std::string nodeid, const std::string alias,
 {
 }
 
-std::ostream &operator<<(std::ostream &os, node n)
+std::ostream &operator<<(std::ostream &os, const node &n)
 {
 	os << n.nodeid.substr(0, 6) << "... " << n.address;
+	return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const peer &p)
+{
+	os << p.id.substr(0, 6) << "...";
 	return os;
 }
 
@@ -222,6 +228,7 @@ peer::peer(const json &j)
 {
 	id = j.at("id").get<std::string>();
 	connected = j.at("connected").get<bool>();
+	channel_open = false;
 }
 
 node_list listnodes(const ld &ld)
@@ -261,7 +268,7 @@ int for_try(const ld &ld, std::string_view text, T list, Op op)
 			op(ld, n);
 			++i;
 		} catch (std::exception &e) {
-			l_info(e.what());
+			l_warn(e.what());
 		}
 	}
 	return i;
@@ -323,7 +330,14 @@ void strip_non_addressable(node_list &nodes)
 		    nodes.end());
 }
 
-int connect_random2(const ld &ld, const node_list &nodes, int n)
+void strip_channel_open(peer_list &peers)
+{
+	peers.erase(std::remove_if(peers.begin(), peers.end(),
+				   [](auto n) { return n.channel_open; }),
+		    peers.end());
+}
+
+int connect_random(const ld &ld, const node_list &nodes, int n)
 {
 	l_trace(" connecting to " << n << " random nodes");
 	node_list rnd_nodes;
@@ -344,15 +358,18 @@ int connect_random2(const ld &ld, const node_list &nodes, int n)
 	return i;
 }
 
-int connect_random(const ld &ld, const node_list &nodes, int n)
+int open_channel(const ld &ld, const peer &peer, uint64_t sats)
 {
-	l_trace(" connecting to " << n << " random nodes");
-	node_list rnd_nodes;
-	std::sample(nodes.begin(),
-		    nodes.end(),
-		    std::back_inserter(rnd_nodes),
-		    n,
-		    std::mt19937{std::random_device{}()});
-	return connect(ld, rnd_nodes);
+	rpc::openchannel(ld, peer.id, sats);
 }
+
+int open_channel(const ld &ld, const peer_list &peers, uint64_t sats)
+{
+#if 0
+	l_trace(" opening " << n << " channels");
+	return for_try(ld, "opening ", peers,
+		       [](auto &ld, auto &p) { open_channel(ld, p, sats); });
+#endif
+}
+
 } // lit

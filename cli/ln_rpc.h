@@ -34,7 +34,7 @@ json newaddr(const ld &ld, bool bech32);
 json connect(const ld &ld, std::string_view peer_id,
 	     std::string_view peer_addr);
 json disconnect(const ld &ld, const std::string & peer_id);
-json fundchannel(const ld &ld, const std::string &id, uint64_t amount);
+json openchannel(const ld &ld, const std::string &id, uint64_t sats);
 json closechannel(const ld &ld, const std::string &id, bool force = false,
 		  int timeout = 30);
 }
@@ -55,7 +55,7 @@ struct node {
 	{
 		return a.nodeid == b.nodeid;
 	}
-	friend std::ostream &operator<<(std::ostream &os, node n);
+	friend std::ostream &operator<<(std::ostream &os, const node &n);
 
 	std::string nodeid;
 	std::string alias;
@@ -78,13 +78,10 @@ struct peer {
 	peer(const peer &) = default;
 	peer &operator=(const peer &) = default;
 	peer(const json &j);
-	friend std::ostream& operator<<(std::ostream& os, const peer &p)
-	{
-		os << p.id;
-		return os;
-	}
+	friend std::ostream& operator<<(std::ostream& os, const peer &p);
 	std::string id;
 	bool connected;
+	bool channel_open;
 };
 
 using peer_list = std::vector<peer>;
@@ -104,7 +101,7 @@ bool is_testnet(const ld &ld);
 int connections(const peer_list &peers);
 int addressable(const node_list &nodes);
 void strip_non_addressable(node_list &nodes);
+void strip_channel_open(peer_list &peers);
 int connect_random(const ld &ld, const node_list &nodes, int n);
-int connect_random2(const ld &ld, const node_list &nodes, int n);
 
 } // lightning

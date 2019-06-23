@@ -7,12 +7,6 @@
 
 namespace lit {
 
-static void fund_all(const hosts & hosts,
-		     const channel_list & channels,
-		     const node_list & nodes, int n)
-{
-}
-
 void bootstrap(const hosts &rpc)
 {
 	auto nodes = listnodes(rpc.ld);
@@ -38,6 +32,25 @@ void bootstrap(const hosts &rpc)
 	} while (addressable(nodes) < 500);
 	l_info("building network complete, disconnecting peers.");
 	disconnect(rpc.ld, peers);
+}
+
+void connect(const hosts &rpc, int count)
+{
+	auto nodes = listnodes(rpc.ld);
+	lit::strip_non_addressable(nodes);
+	if (count > nodes.size()) {
+		l_info("total number of nodes is only " << nodes.size());
+		count = nodes.size();
+	}
+	l_info("connecting to " << count << " random nodes");
+	connect_random(rpc.ld, nodes, count);
+}
+
+void open_channel(const hosts &rpc, int count, uint64_t sats)
+{
+	auto peers = listpeers(rpc.ld);
+	//lit::strip_nonfunded();
+	//open_channel(rpc.ld, count, sats);
 }
 
 void autopilot(const hosts &hosts)

@@ -35,7 +35,7 @@ struct opts {
 	std::string log_level = "info";
 
 	// connect/disconnect/fundchannel/close: number of nodes 
-	int count = 1;
+	int node_count = 1;
 
 	lit::hosts rpc;
 };
@@ -88,7 +88,7 @@ static satoshi get_funds(lit::ld &ld)
 	return total;
 }
 
-void getinfo(struct opts &opts)
+void status(struct opts &opts)
 {
 	l_info("network is " << (is_testnet(opts.rpc.ld) ? "testnet" : "mainnet"));
 	auto nodes = listnodes(opts.rpc.ld);
@@ -98,24 +98,26 @@ void getinfo(struct opts &opts)
 	l_info(channels.size() << " channels in network");
 	auto peers = listpeers(opts.rpc.ld);
 	l_info(peers.size() << " peers");
-	auto mlnodes = lit::web::get_1ML_connected(opts.rpc);
-	l_info(mlnodes.size() << " 1ML nodes");
 
-	l_info("block count is " << lit::rpc::getblockcount(opts.rpc.bd));
 	l_info("bitcoin price is " << to_dollars(opts.rpc.https, 100000000));
 	l_info("total funds: " << to_dollars(opts.rpc.https, get_funds(opts.rpc.ld)));
+	l_info("block count is " << lit::rpc::getblockcount(opts.rpc.bd));
 }
 
 void connectn(struct opts &opts)
 {
-	l_info("connecting to " << opts.count << " nodes");
+#if 1
+	lit::connect(opts.rpc, opts.node_count);
+#else
+	l_info("connecting to " << opts.node_count << " nodes");
 	auto nodes = listnodes(opts.rpc.ld);
 	lit::strip_non_addressable(nodes);
-	if (opts.count > nodes.size())
-		PANIC("requesting " << opts.count
+	if (opts.node_count > nodes.size())
+		PANIC("requesting " << opts.node_count
 				    << " connections but there are only "
 				    << nodes.size() << " nodes in network.");
-	connect_random2(opts.rpc.ld, nodes, opts.count);
+	connect_random2(opts.rpc.ld, nodes, opts.node_count);
+#endif
 }
 
 void closeall(struct opts &opts)
@@ -151,8 +153,8 @@ int CLI11_parse(opts &opts, int argc, char **argv)
 
 	app.require_subcommand(1);
 
-	app.add_subcommand("getinfo", "Display summary information on channels")
-	    ->callback([&]() { getinfo(opts); });
+	app.add_subcommand("status", "Display summary information.")
+	    ->callback([&]() { status(opts); });
 	app.add_subcommand("closeall",
 			   "Close all open channels, forcibly if necessary.")
 	    ->callback([&]() { closeall(opts); });
@@ -160,7 +162,7 @@ int CLI11_parse(opts &opts, int argc, char **argv)
 	auto c = app.add_subcommand("connect", "Connect to random nodes.");
 	c->callback([&]() { connectn(opts); });
 	c->add_option("-t,--timeout", opts.timeout, "conenction timeout", true);
-	//c->add_option("count", opts.count, "node count")->required();
+	c->add_option("count", opts.node_count, "node count");
 
 	app.add_subcommand("bootstrap", "Get a new node connected")
 	    ->callback([&]() { bootstrap(opts); });

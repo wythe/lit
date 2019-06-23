@@ -5,4 +5,4 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
 add_executable(lit logger.cpp lit.cpp rpc.cpp web_rpc.cpp ln_rpc.cpp bc_rpc.cpp channel.cpp)
-target_link_libraries(lit ${CURL_LIBRARIES} ${Boost_LIBRARIES} Threads::Threads)
+target_link_libraries(lit ${CURL_LIBRARIES} Threads::Threads)
